@@ -1,10 +1,10 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="fr">
   <head>
     <meta charset="UTF-8" />
-    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
+    <link rel="icon" type="image/png" href="/logo_lexia.png" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Client Onboard Hub</title>
+    <title>Lexia CRM</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script>
       tailwind.config = {
@@ -18,34 +18,80 @@
               background: "hsl(var(--background))",
               foreground: "hsl(var(--foreground))",
               primary: {
-                DEFAULT: "#ea580c", // Sunset Orange
-                foreground: "#ffffff",
+                DEFAULT: "hsl(var(--primary))",
+                foreground: "hsl(var(--primary-foreground))",
               },
               secondary: {
-                DEFAULT: "#1e293b", // Navy
-                foreground: "#ffffff",
+                DEFAULT: "hsl(var(--secondary))",
+                foreground: "hsl(var(--secondary-foreground))",
               },
               destructive: {
-                DEFAULT: "#ef4444",
-                foreground: "#ffffff",
+                DEFAULT: "hsl(var(--destructive))",
+                foreground: "hsl(var(--destructive-foreground))",
               },
               muted: {
-                DEFAULT: "#f1f5f9",
-                foreground: "#64748b",
+                DEFAULT: "hsl(var(--muted))",
+                foreground: "hsl(var(--muted-foreground))",
               },
               accent: {
-                DEFAULT: "#fed7aa", // Light Orange
-                foreground: "#0f172a",
+                DEFAULT: "hsl(var(--accent))",
+                foreground: "hsl(var(--accent-foreground))",
+              },
+              popover: {
+                DEFAULT: "hsl(var(--popover))",
+                foreground: "hsl(var(--popover-foreground))",
               },
               card: {
-                DEFAULT: "#ffffff",
-                foreground: "#0f172a",
+                DEFAULT: "hsl(var(--card))",
+                foreground: "hsl(var(--card-foreground))",
+              },
+              sidebar: {
+                DEFAULT: "hsl(var(--sidebar-background))",
+                foreground: "hsl(var(--sidebar-foreground))",
+                primary: "hsl(var(--sidebar-primary))",
+                "primary-foreground": "hsl(var(--sidebar-primary-foreground))",
+                accent: "hsl(var(--sidebar-accent))",
+                "accent-foreground": "hsl(var(--sidebar-accent-foreground))",
+                border: "hsl(var(--sidebar-border))",
+                ring: "hsl(var(--sidebar-ring))",
               },
             },
             borderRadius: {
-              lg: "0.5rem",
-              md: "calc(0.5rem - 2px)",
-              sm: "calc(0.5rem - 4px)",
+              lg: "var(--radius)",
+              md: "calc(var(--radius) - 2px)",
+              sm: "calc(var(--radius) - 4px)",
+            },
+            fontFamily: {
+              sans: ['Inter', 'system-ui', '-apple-system', 'sans-serif'],
+            },
+            keyframes: {
+              "accordion-down": {
+                from: { height: "0" },
+                to: { height: "var(--radix-accordion-content-height)" },
+              },
+              "accordion-up": {
+                from: { height: "var(--radix-accordion-content-height)" },
+                to: { height: "0" },
+              },
+              "fade-in": {
+                from: { opacity: "0" },
+                to: { opacity: "1" },
+              },
+              "slide-in-from-left": {
+                from: { transform: "translateX(-100%)" },
+                to: { transform: "translateX(0)" },
+              },
+              "slide-in-from-right": {
+                from: { transform: "translateX(100%)" },
+                to: { transform: "translateX(0)" },
+              },
+            },
+            animation: {
+              "accordion-down": "accordion-down 0.2s ease-out",
+              "accordion-up": "accordion-up 0.2s ease-out",
+              "fade-in": "fade-in 0.2s ease-out",
+              "slide-in-from-left": "slide-in-from-left 0.3s ease-out",
+              "slide-in-from-right": "slide-in-from-right 0.3s ease-out",
             },
           },
         },
@@ -55,50 +101,118 @@
       @layer base {
         :root {
           --background: 0 0% 100%;
-          --foreground: 222.2 84% 4.9%;
+          --foreground: 240 10% 3.9%;
           --card: 0 0% 100%;
-          --card-foreground: 222.2 84% 4.9%;
+          --card-foreground: 240 10% 3.9%;
           --popover: 0 0% 100%;
-          --popover-foreground: 222.2 84% 4.9%;
-          --primary: 24.6 95% 53.1%;
-          --primary-foreground: 60 9.1% 97.8%;
-          --secondary: 217.2 32.6% 17.5%;
-          --secondary-foreground: 60 9.1% 97.8%;
-          --muted: 210 40% 96.1%;
-          --muted-foreground: 215.4 16.3% 46.9%;
-          --accent: 24.6 95% 93.1%;
-          --accent-foreground: 222.2 47.4% 11.2%;
+          --popover-foreground: 240 10% 3.9%;
+          --primary: 262.1 83.3% 57.8%;
+          --primary-foreground: 0 0% 100%;
+          --secondary: 240 4.8% 95.9%;
+          --secondary-foreground: 240 5.9% 10%;
+          --muted: 240 4.8% 95.9%;
+          --muted-foreground: 240 3.8% 46.1%;
+          --accent: 240 4.8% 95.9%;
+          --accent-foreground: 240 5.9% 10%;
           --destructive: 0 84.2% 60.2%;
-          --destructive-foreground: 210 40% 98%;
-          --border: 214.3 31.8% 91.4%;
-          --input: 214.3 31.8% 91.4%;
-          --ring: 24.6 95% 53.1%;
-          --radius: 0.5rem;
+          --destructive-foreground: 0 0% 98%;
+          --border: 240 5.9% 90%;
+          --input: 240 5.9% 90%;
+          --ring: 262.1 83.3% 57.8%;
+          --radius: 0.75rem;
+          --sidebar-background: 0 0% 98%;
+          --sidebar-foreground: 240 5.3% 26.1%;
+          --sidebar-primary: 262.1 83.3% 57.8%;
+          --sidebar-primary-foreground: 0 0% 100%;
+          --sidebar-accent: 240 4.8% 95.9%;
+          --sidebar-accent-foreground: 240 5.9% 10%;
+          --sidebar-border: 240 5.9% 90%;
+          --sidebar-ring: 262.1 83.3% 57.8%;
         }
+
         .dark {
-          --background: 222.2 84% 4.9%;
-          --foreground: 210 40% 98%;
-          --card: 222.2 84% 4.9%;
-          --card-foreground: 210 40% 98%;
-          --popover: 222.2 84% 4.9%;
-          --popover-foreground: 210 40% 98%;
-          --primary: 24.6 95% 53.1%;
-          --primary-foreground: 222.2 47.4% 11.2%;
-          --secondary: 217.2 32.6% 17.5%;
-          --secondary-foreground: 210 40% 98%;
-          --muted: 217.2 32.6% 17.5%;
-          --muted-foreground: 215 20.2% 65.1%;
-          --accent: 217.2 32.6% 17.5%;
-          --accent-foreground: 210 40% 98%;
+          --background: 240 10% 3.9%;
+          --foreground: 0 0% 98%;
+          --card: 240 10% 3.9%;
+          --card-foreground: 0 0% 98%;
+          --popover: 240 10% 3.9%;
+          --popover-foreground: 0 0% 98%;
+          --primary: 263.4 70% 50.4%;
+          --primary-foreground: 0 0% 100%;
+          --secondary: 240 3.7% 15.9%;
+          --secondary-foreground: 0 0% 98%;
+          --muted: 240 3.7% 15.9%;
+          --muted-foreground: 240 5% 64.9%;
+          --accent: 240 3.7% 15.9%;
+          --accent-foreground: 0 0% 98%;
           --destructive: 0 62.8% 30.6%;
-          --destructive-foreground: 210 40% 98%;
-          --border: 217.2 32.6% 17.5%;
-          --input: 217.2 32.6% 17.5%;
-          --ring: 24.6 95% 53.1%;
+          --destructive-foreground: 0 0% 98%;
+          --border: 240 3.7% 15.9%;
+          --input: 240 3.7% 15.9%;
+          --ring: 263.4 70% 50.4%;
+          --sidebar-background: 240 5.9% 10%;
+          --sidebar-foreground: 240 4.8% 95.9%;
+          --sidebar-primary: 263.4 70% 50.4%;
+          --sidebar-primary-foreground: 0 0% 100%;
+          --sidebar-accent: 240 3.7% 15.9%;
+          --sidebar-accent-foreground: 240 4.8% 95.9%;
+          --sidebar-border: 240 3.7% 15.9%;
+          --sidebar-ring: 263.4 70% 50.4%;
         }
       }
+
+      @layer base {
+        * {
+          @apply border-border;
+        }
+        body {
+          @apply bg-background text-foreground;
+          font-feature-settings: "rlig" 1, "calt" 1;
+        }
+      }
+
+      /* Custom scrollbar */
+      ::-webkit-scrollbar {
+        width: 8px;
+        height: 8px;
+      }
+      ::-webkit-scrollbar-track {
+        background: transparent;
+      }
+      ::-webkit-scrollbar-thumb {
+        background: hsl(var(--border));
+        border-radius: 4px;
+      }
+      ::-webkit-scrollbar-thumb:hover {
+        background: hsl(var(--muted-foreground) / 0.3);
+      }
+
+      /* Dropdown scrollbar - thinner and more subtle */
+      .dropdown-scroll::-webkit-scrollbar {
+        width: 6px;
+      }
+      .dropdown-scroll::-webkit-scrollbar-thumb {
+        background: hsl(var(--muted-foreground) / 0.2);
+        border-radius: 3px;
+      }
+      .dropdown-scroll::-webkit-scrollbar-thumb:hover {
+        background: hsl(var(--muted-foreground) / 0.4);
+      }
+
+      /* Smooth animations */
+      .animate-in {
+        animation-duration: 0.2s;
+        animation-fill-mode: both;
+      }
+      .fade-in-0 { animation-name: fade-in; }
+      .slide-in-from-left { animation-name: slide-in-from-left; }
+      .slide-in-from-right { animation-name: slide-in-from-right; }
     </style>
-  <script type="importmap">
+    <!-- Google Fonts - Inter -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <script type="importmap">
 {
   "imports": {
     "react-dom/": "https://esm.sh/react-dom@^19.2.3/",
@@ -118,7 +232,8 @@
 <script src="https://apis.google.com/js/api.js"></script>
 <script src="https://accounts.google.com/gsi/client"></script>
 </head>
-  <body class="bg-slate-50 text-slate-900 font-sans antialiased selection:bg-orange-200">
+  <body class="min-h-screen font-sans antialiased">
     <div id="root"></div>
+    <script type="module" src="/index.tsx"></script>
   </body>
 </html>

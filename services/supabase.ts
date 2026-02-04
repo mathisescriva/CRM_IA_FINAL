@@ -29,28 +29,34 @@ async function queueWrite<T>(task: () => Promise<T>): Promise<T> {
     return writeQueue;
 }
 
-// --- MOCK Service (Local Storage Fallback) ---
+// --- MOCK Service (Local Storage with versioning) ---
+const DATA_VERSION = 'v3-lexia-logos'; // Incrementer pour forcer refresh
+
 class MockService {
     private getLocalData(): Company[] {
-        const stored = localStorage.getItem('lexia_mock_companies');
-        if (stored) {
-            const parsed = JSON.parse(stored);
-            // Migration automatique email -> emails si nécessaire
-            return parsed.map((co: any) => ({
-                ...co,
-                contacts: co.contacts.map((c: any) => ({
-                    ...c,
-                    emails: Array.isArray(c.emails) ? c.emails : (c.email ? [c.email] : [])
-                }))
-            }));
+        const storedVersion = localStorage.getItem('lexia_data_version');
+        const stored = localStorage.getItem('lexia_companies');
+        
+        // Si version différente ou pas de données, réinitialiser
+        if (storedVersion !== DATA_VERSION || !stored) {
+            const initialData = JSON.parse(JSON.stringify(MOCK_COMPANIES));
+            localStorage.setItem('lexia_companies', JSON.stringify(initialData));
+            localStorage.setItem('lexia_data_version', DATA_VERSION);
+            return initialData;
         }
-        const initialData = JSON.parse(JSON.stringify(MOCK_COMPANIES));
-        localStorage.setItem('lexia_mock_companies', JSON.stringify(initialData));
-        return initialData;
+        
+        const parsed = JSON.parse(stored);
+        return parsed.map((co: any) => ({
+            ...co,
+            contacts: co.contacts.map((c: any) => ({
+                ...c,
+                emails: Array.isArray(c.emails) ? c.emails : (c.email ? [c.email] : [])
+            }))
+        }));
     }
 
     private saveLocalData(data: Company[]) {
-        localStorage.setItem('lexia_mock_companies', JSON.stringify(data));
+        localStorage.setItem('lexia_companies', JSON.stringify(data));
         window.dispatchEvent(new CustomEvent('companies-updated'));
     }
 

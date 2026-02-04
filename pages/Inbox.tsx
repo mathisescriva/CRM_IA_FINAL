@@ -1,13 +1,13 @@
-
 import React, { useState, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { gmailService, GmailMessage } from '../services/gmail';
 import { companyService } from '../services/supabase';
+import { Company, Contact } from '../types';
 import { 
     Mail, Loader2, PenSquare, ChevronLeft, Inbox as InboxIcon, 
     Send, FileText, Trash2, Search, Star, 
     MoreVertical, Reply, X, Archive, Filter, ChevronRight,
-    CornerUpLeft
+    CornerUpLeft, Building2, User, Check
 } from 'lucide-react';
 import { getInitials, cn } from '../lib/utils';
 
@@ -27,9 +27,24 @@ export const Inbox: React.FC = () => {
     const [showCompose, setShowCompose] = useState(false);
     const [composeForm, setComposeForm] = useState({ to: '', subject: '', body: '' });
     const [senderContact, setSenderContact] = useState<any>(null);
+    
+    // Autocomplete states
+    const [companies, setCompanies] = useState<Company[]>([]);
+    const [contacts, setContacts] = useState<any[]>([]);
+    const [filteredContacts, setFilteredContacts] = useState<any[]>([]);
+    const [showContactSuggestions, setShowContactSuggestions] = useState(false);
+    const [selectedContactEmails, setSelectedContactEmails] = useState<any[]>([]);
+    const [contactSearchQuery, setContactSearchQuery] = useState('');
+    
+    // Filter states
+    const [selectedCompanyFilter, setSelectedCompanyFilter] = useState<string>('');
+    const [showCompanyFilter, setShowCompanyFilter] = useState(false);
 
     useEffect(() => {
         const init = async () => {
+            // Load companies and contacts for autocomplete first
+            await loadCompaniesAndContacts();
+            
             await gmailService.load();
             setIsAuthenticated(gmailService.isAuthenticated);
             if (gmailService.isAuthenticated) loadMessages();
@@ -37,6 +52,39 @@ export const Inbox: React.FC = () => {
         };
         init();
     }, [currentFolder]);
+
+    const loadCompaniesAndContacts = async () => {
+        try {
+            const allCompanies = await companyService.getAll();
+            console.log('Companies loaded:', allCompanies.length);
+            setCompanies(allCompanies);
+            
+            // Extract all contacts from companies
+            const allContacts: any[] = [];
+            allCompanies.forEach(company => {
+                company.contacts.forEach(contact => {
+                    // emails is an array, take the first one
+                    const email = contact.emails?.[0] || contact.email;
+                    if (email) {
+                        allContacts.push({
+                            id: contact.id,
+                            name: contact.name,
+                            email: email,
+                            role: contact.role,
+                            avatarUrl: contact.avatarUrl,
+                            companyId: company.id,
+                            companyName: company.name,
+                            companyLogo: company.logoUrl
+                        });
+                    }
+                });
+            });
+            console.log('Contacts loaded:', allContacts);
+            setContacts(allContacts);
+        } catch (error) {
+            console.error('Error loading contacts:', error);
+        }
+    };
 
     useEffect(() => {
         if (location.state && (location.state.composeTo || location.state.subject || location.state.body)) {
@@ -100,11 +148,84 @@ export const Inbox: React.FC = () => {
     const handleCompose = async (e: React.FormEvent) => {
         e.preventDefault();
         try {
-            await gmailService.sendEmail(composeForm.to, composeForm.subject, composeForm.body);
+            // Build final recipient list
+            const recipients = selectedContactEmails.map(c => c.email).join(', ') + 
+                             (composeForm.to ? (selectedContactEmails.length > 0 ? ', ' : '') + composeForm.to : '');
+            
+            await gmailService.sendEmail(recipients, composeForm.subject, composeForm.body);
             setShowCompose(false);
             setComposeForm({ to: '', subject: '', body: '' });
+            setSelectedContactEmails([]);
+            setContactSearchQuery('');
             if (currentFolder === 'SENT') loadMessages();
         } catch (e) { alert("Erreur lors de l'envoi."); }
+    };
+
+    const handleContactSearch = (query: string) => {
+        setContactSearchQuery(query);
+        
+        // Filter contacts based on query and company filter
+        let filtered = contacts;
+        
+        if (query.trim() !== '') {
+            filtered = contacts.filter(contact => {
+                const matchesQuery = 
+                    contact.name.toLowerCase().includes(query.toLowerCase()) ||
+                    contact.email.toLowerCase().includes(query.toLowerCase()) ||
+                    (contact.companyName && contact.companyName.toLowerCase().includes(query.toLowerCase()));
+                
+                return matchesQuery;
+            });
+        }
+        
+        // Apply company filter if set
+        if (selectedCompanyFilter) {
+            filtered = filtered.filter(contact => contact.companyId === selectedCompanyFilter);
+        }
+        
+        setFilteredContacts(filtered.slice(0, 10));
+        setShowContactSuggestions(true);
+    };
+
+    const handleContactInputFocus = () => {
+        console.log('Focus on contact input, contacts:', contacts.length);
+        // Show all contacts when focusing the input
+        let filtered = [...contacts];
+        
+        if (selectedCompanyFilter) {
+            filtered = filtered.filter(contact => contact.companyId === selectedCompanyFilter);
+        }
+        
+        const toShow = filtered.slice(0, 10);
+        console.log('Showing contacts:', toShow.length);
+        setFilteredContacts(toShow);
+        setShowContactSuggestions(true);
+    };
+
+    const selectContact = (contact: any) => {
+        console.log('Selecting contact:', contact);
+        if (!selectedContactEmails.find(c => c.email === contact.email)) {
+            setSelectedContactEmails([...selectedContactEmails, contact]);
+        }
+        setContactSearchQuery('');
+        setFilteredContacts([]);
+        setShowContactSuggestions(false);
+    };
+
+    const removeContact = (email: string) => {
+        setSelectedContactEmails(selectedContactEmails.filter(c => c.email !== email));
+    };
+
+    const filterMessagesByCompany = (companyId: string) => {
+        const company = companies.find(c => c.id === companyId);
+        if (!company) return;
+        
+        const companyEmails = company.contacts.map(c => c.email).filter(Boolean);
+        const emailQuery = companyEmails.map(email => `from:${email} OR to:${email}`).join(' OR ');
+        
+        if (emailQuery) {
+            loadMessages(`(${emailQuery})`);
+        }
     };
 
     const checkCrmContact = async (emailStr: string) => {
@@ -172,8 +293,47 @@ export const Inbox: React.FC = () => {
                 <div className="p-4 lg:p-6 border-b border-slate-100 dark:border-slate-800 bg-white/50 dark:bg-slate-950/50 backdrop-blur sticky top-0 z-20">
                     <div className="flex items-center justify-between mb-4">
                         <h2 className="text-xl font-bold text-slate-900 dark:text-slate-100 tracking-tight">Messages</h2>
-                        <button className="p-2 text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-900 rounded-lg transition-all"><Filter className="h-4 w-4" /></button>
+                        <button 
+                            onClick={() => setShowCompanyFilter(!showCompanyFilter)}
+                            className={cn(
+                                "p-2 rounded-lg transition-all",
+                                selectedCompanyFilter 
+                                    ? "text-primary bg-primary/10" 
+                                    : "text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-900"
+                            )}
+                        >
+                            <Filter className="h-4 w-4" />
+                        </button>
                     </div>
+                    
+                    {/* Company Filter */}
+                    {showCompanyFilter && (
+                        <div className="mb-4 p-3 bg-slate-50 dark:bg-slate-900 rounded-lg border border-slate-200 dark:border-slate-800">
+                            <label className="text-xs font-semibold text-slate-600 dark:text-slate-400 mb-2 block">
+                                Filtrer par entreprise
+                            </label>
+                            <select
+                                value={selectedCompanyFilter}
+                                onChange={(e) => {
+                                    setSelectedCompanyFilter(e.target.value);
+                                    if (e.target.value) {
+                                        filterMessagesByCompany(e.target.value);
+                                    } else {
+                                        loadMessages();
+                                    }
+                                }}
+                                className="w-full px-3 py-2 bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-lg text-sm outline-none focus:ring-2 focus:ring-primary/20"
+                            >
+                                <option value="">Toutes les entreprises</option>
+                                {companies.map(company => (
+                                    <option key={company.id} value={company.id}>
+                                        {company.name}
+                                    </option>
+                                ))}
+                            </select>
+                        </div>
+                    )}
+                    
                     <form onSubmit={handleSearch} className="relative">
                         <Search className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
                         <input 
@@ -304,27 +464,170 @@ export const Inbox: React.FC = () => {
             {/* Compose Dialog (Shadcn Style) */}
             {showCompose && (
                 <div className="fixed inset-0 z-[100] flex items-end sm:items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4 animate-in fade-in duration-200">
-                    <div className="bg-white dark:bg-slate-900 w-full max-w-2xl rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-800 overflow-hidden flex flex-col max-h-[90vh]">
+                    <div className="bg-white dark:bg-slate-900 w-full max-w-2xl rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-800 flex flex-col max-h-[90vh]">
                         <div className="p-4 bg-slate-50 dark:bg-slate-950 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between">
-                            <span className="font-bold text-sm text-slate-900 dark:text-slate-100">New Message</span>
-                            <button onClick={() => setShowCompose(false)} className="p-1 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-md transition-all"><X className="h-4 w-4 text-slate-500" /></button>
+                            <span className="font-bold text-sm text-slate-900 dark:text-slate-100">Nouveau message</span>
+                            <button 
+                                onClick={() => {
+                                    setShowCompose(false);
+                                    setSelectedContactEmails([]);
+                                    setContactSearchQuery('');
+                                    setShowContactSuggestions(false);
+                                }} 
+                                className="p-1 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-md transition-all"
+                            >
+                                <X className="h-4 w-4 text-slate-500" />
+                            </button>
                         </div>
-                        <form onSubmit={handleCompose} className="p-6 space-y-4 flex-1 overflow-y-auto">
+                        
+                        {/* Recipients section - separate from scrollable form */}
+                        <div className="p-6 pb-0 relative z-50">
+                            <div className="border border-slate-200 dark:border-slate-800 rounded-lg p-3 space-y-3">
+                                <div className="flex items-start gap-2 flex-wrap">
+                                    <span className="text-xs font-bold text-slate-400 pt-2">À:</span>
+                                    {selectedContactEmails.map(contact => (
+                                        <div 
+                                            key={contact.email}
+                                            className="flex items-center gap-2 px-2 py-1 bg-primary/10 text-primary rounded-full text-sm"
+                                        >
+                                            {contact.avatarUrl ? (
+                                                <img 
+                                                    src={contact.avatarUrl} 
+                                                    alt={contact.name}
+                                                    className="h-5 w-5 rounded-full object-cover"
+                                                />
+                                            ) : (
+                                                <div className="h-5 w-5 rounded-full bg-primary/20 flex items-center justify-center">
+                                                    <span className="text-[10px] font-bold">
+                                                        {contact.name.split(' ').map((n: string) => n[0]).join('').toUpperCase().slice(0, 2)}
+                                                    </span>
+                                                </div>
+                                            )}
+                                            <span className="font-medium">{contact.name}</span>
+                                            <button
+                                                type="button"
+                                                onClick={() => removeContact(contact.email)}
+                                                className="hover:bg-primary/20 rounded-full p-0.5 transition-colors"
+                                            >
+                                                <X className="h-3 w-3" />
+                                            </button>
+                                        </div>
+                                    ))}
+                                    <div className="flex-1 min-w-[200px] relative">
+                                        <input 
+                                            type="text"
+                                            value={contactSearchQuery}
+                                            onChange={(e) => handleContactSearch(e.target.value)}
+                                            onFocus={handleContactInputFocus}
+                                            onBlur={() => {
+                                                setTimeout(() => setShowContactSuggestions(false), 300);
+                                            }}
+                                            className="w-full bg-transparent border-none text-sm font-medium outline-none dark:text-white py-1.5"
+                                            placeholder={contacts.length > 0 ? `Rechercher parmi ${contacts.length} contacts...` : "Chargement des contacts..."}
+                                        />
+                                    </div>
+                                </div>
+                                
+                                {/* Manual email input */}
+                                <div className="flex items-center gap-2 pt-2 border-t border-slate-100 dark:border-slate-800">
+                                    <span className="text-xs font-bold text-slate-400">Ou:</span>
+                                    <input 
+                                        type="email"
+                                        value={composeForm.to}
+                                        onChange={e => setComposeForm({...composeForm, to: e.target.value})}
+                                        className="flex-1 bg-transparent border-none text-sm outline-none dark:text-white"
+                                        placeholder="email@example.com"
+                                    />
+                                </div>
+                            </div>
+                            
+                            {/* Suggestions dropdown - positioned outside for visibility */}
+                            {showContactSuggestions && (
+                                <div className="absolute left-6 right-6 top-full mt-1 bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-lg shadow-2xl max-h-64 overflow-y-auto z-[200]">
+                                    {filteredContacts.length > 0 ? (
+                                        <>
+                                            <div className="p-2 border-b border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/50 sticky top-0">
+                                                <p className="text-xs font-semibold text-slate-500 dark:text-slate-400">
+                                                    {filteredContacts.length} contact{filteredContacts.length > 1 ? 's' : ''} trouvé{filteredContacts.length > 1 ? 's' : ''}
+                                                </p>
+                                            </div>
+                                            {filteredContacts.map(contact => (
+                                                <button
+                                                    key={contact.email}
+                                                    type="button"
+                                                    onMouseDown={(e) => {
+                                                        e.preventDefault();
+                                                        selectContact(contact);
+                                                    }}
+                                                    className="w-full flex items-center gap-3 px-4 py-3 hover:bg-slate-50 dark:hover:bg-slate-900 transition-colors text-left border-b border-slate-50 dark:border-slate-900 last:border-0"
+                                                >
+                                                    {contact.avatarUrl ? (
+                                                        <img 
+                                                            src={contact.avatarUrl} 
+                                                            alt={contact.name}
+                                                            className="h-9 w-9 rounded-full object-cover shrink-0"
+                                                            onError={(e) => {
+                                                                e.currentTarget.style.display = 'none';
+                                                                e.currentTarget.nextElementSibling?.classList.remove('hidden');
+                                                            }}
+                                                        />
+                                                    ) : null}
+                                                    <div className={cn(
+                                                        "h-9 w-9 rounded-full bg-primary/10 flex items-center justify-center shrink-0",
+                                                        contact.avatarUrl && "hidden"
+                                                    )}>
+                                                        <span className="text-xs font-bold text-primary">
+                                                            {contact.name.split(' ').map((n: string) => n[0]).join('').toUpperCase().slice(0, 2)}
+                                                        </span>
+                                                    </div>
+                                                    <div className="flex-1 min-w-0">
+                                                        <p className="text-sm font-semibold text-slate-900 dark:text-slate-100">
+                                                            {contact.name}
+                                                        </p>
+                                                        <p className="text-xs text-slate-500 truncate">
+                                                            {contact.email}
+                                                        </p>
+                                                    </div>
+                                                    <div className="flex items-center gap-1.5 px-2 py-1 bg-slate-100 dark:bg-slate-800 rounded text-xs text-slate-600 dark:text-slate-400 shrink-0">
+                                                        <Building2 className="h-3 w-3" />
+                                                        <span className="font-medium truncate max-w-[100px]">{contact.companyName}</span>
+                                                    </div>
+                                                </button>
+                                            ))}
+                                        </>
+                                    ) : (
+                                        <div className="p-4 text-center text-sm text-slate-500">
+                                            Aucun contact trouvé
+                                        </div>
+                                    )}
+                                </div>
+                            )}
+                        </div>
+                        
+                        <form onSubmit={handleCompose} className="p-6 pt-4 space-y-4 flex-1 overflow-y-auto">
                             <div className="space-y-4">
                                 <div className="flex items-center gap-4 border-b border-slate-100 dark:border-slate-800 pb-2">
-                                    <span className="text-xs font-bold text-slate-400 w-8">To</span>
-                                    <input type="email" required value={composeForm.to} onChange={e => setComposeForm({...composeForm, to: e.target.value})} className="flex-1 bg-transparent border-none text-sm font-medium outline-none dark:text-white" placeholder="recipient@example.com" />
+                                    <span className="text-xs font-bold text-slate-400 w-8">Objet</span>
+                                    <input type="text" required value={composeForm.subject} onChange={e => setComposeForm({...composeForm, subject: e.target.value})} className="flex-1 bg-transparent border-none text-sm font-medium outline-none dark:text-white" placeholder="Objet du message" />
                                 </div>
-                                <div className="flex items-center gap-4 border-b border-slate-100 dark:border-slate-800 pb-2">
-                                    <span className="text-xs font-bold text-slate-400 w-8">Sub</span>
-                                    <input type="text" required value={composeForm.subject} onChange={e => setComposeForm({...composeForm, subject: e.target.value})} className="flex-1 bg-transparent border-none text-sm font-medium outline-none dark:text-white" placeholder="Subject" />
-                                </div>
-                                <textarea rows={14} required value={composeForm.body} onChange={e => setComposeForm({...composeForm, body: e.target.value})} className="w-full bg-transparent border-none text-sm font-medium outline-none dark:text-white resize-none mt-4 font-sans leading-relaxed min-h-[300px]" placeholder="Type your message here..." />
+                                <textarea rows={14} required value={composeForm.body} onChange={e => setComposeForm({...composeForm, body: e.target.value})} className="w-full bg-transparent border-none text-sm font-medium outline-none dark:text-white resize-none mt-4 font-sans leading-relaxed min-h-[250px]" placeholder="Écrivez votre message..." />
                             </div>
                         </form>
                         <div className="p-4 bg-slate-50 dark:bg-slate-950 border-t border-slate-100 dark:border-slate-800 flex items-center justify-end gap-3">
-                            <button onClick={() => setShowCompose(false)} className="px-4 py-2 text-xs font-bold text-slate-500 hover:text-slate-900 dark:hover:text-slate-100 transition-all uppercase tracking-widest">Discard</button>
-                            <button onClick={handleCompose} className="bg-slate-900 dark:bg-white text-white dark:text-slate-950 px-6 py-2 rounded-lg text-xs font-bold shadow-lg transition-all active:scale-95 flex items-center gap-2 uppercase tracking-widest">Send <Send className="h-3.5 w-3.5" /></button>
+                            <button 
+                                type="button"
+                                onClick={() => {
+                                    setShowCompose(false);
+                                    setSelectedContactEmails([]);
+                                    setContactSearchQuery('');
+                                }} 
+                                className="px-4 py-2 text-xs font-bold text-slate-500 hover:text-slate-900 dark:hover:text-slate-100 transition-all uppercase tracking-widest"
+                            >
+                                Annuler
+                            </button>
+                            <button type="button" onClick={handleCompose} className="bg-slate-900 dark:bg-white text-white dark:text-slate-950 px-6 py-2 rounded-lg text-xs font-bold shadow-lg transition-all active:scale-95 flex items-center gap-2 uppercase tracking-widest">
+                                Envoyer <Send className="h-3.5 w-3.5" />
+                            </button>
                         </div>
                     </div>
                 </div>

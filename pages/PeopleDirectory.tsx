@@ -1,11 +1,18 @@
-
 import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { companyService } from '../services/supabase';
 import { Contact, Company, CompanyType, Priority, Gender } from '../types';
-import { Search, Mail, Building2, ChevronRight, Phone, Plus, X, Camera, Briefcase, User, Linkedin, Save, Trash2, ChevronDown, Check, UserPlus, Sparkles, Loader2 } from 'lucide-react';
+import { Search, Mail, Building2, Phone, Plus, X, Camera, Briefcase, Linkedin, Trash2, ChevronDown, Check, UserPlus, Loader2 } from 'lucide-react';
 import { getInitials } from '../lib/utils';
-import { clsx } from 'clsx';
+import { cn } from '../lib/utils';
+
+// Shadcn UI Components
+import { Input } from '../components/ui/Input';
+import { Button } from '../components/ui/Button';
+import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '../components/ui/Card';
+import { Label } from '../components/ui/Label';
+import { Avatar, AvatarImage, AvatarFallback } from '../components/ui/Avatar';
+import { Badge } from '../components/ui/Badge';
 
 interface ContactWithCompany extends Contact {
     companyId: string;
@@ -39,31 +46,32 @@ const CustomSelect: React.FC<SelectProps> = ({ value, onChange, options, placeho
     const selectedLabel = options.find(o => o.value === value)?.label;
 
     return (
-        <div className={clsx("relative w-full", className)} ref={ref}>
-            <button
+        <div className={cn("relative w-full", className)} ref={ref}>
+            <Button
                 type="button"
+                variant="outline"
                 onClick={() => setIsOpen(!isOpen)}
-                className="flex h-11 w-full items-center justify-between rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 px-4 py-2 text-sm text-slate-900 dark:text-slate-100 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-orange-500/20 disabled:cursor-not-allowed disabled:opacity-50 transition-all hover:bg-slate-50 dark:hover:bg-slate-900"
+                className="w-full justify-between h-10 font-normal"
             >
-                <span className={clsx("block truncate", !value && "text-slate-500")}>
+                <span className={cn("block truncate", !value && "text-muted-foreground")}>
                     {selectedLabel || placeholder || "Sélectionner..."}
                 </span>
-                <ChevronDown className={clsx("h-4 w-4 opacity-50 transition-transform", isOpen && "rotate-180")} />
-            </button>
+                <ChevronDown className={cn("h-4 w-4 opacity-50 transition-transform", isOpen && "rotate-180")} />
+            </Button>
             {isOpen && (
-                <div className="absolute z-50 mt-2 max-h-60 w-full overflow-auto rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 text-slate-950 dark:text-slate-100 shadow-2xl animate-in fade-in-0 zoom-in-95 slide-in-from-top-2">
-                    <div className="p-1.5">
+                <div className="absolute z-50 mt-1 max-h-60 w-full overflow-auto rounded-lg border bg-popover text-popover-foreground shadow-lg animate-in fade-in-0 zoom-in-95">
+                    <div className="p-1">
                         {options.map((option) => (
                             <div
                                 key={option.value}
                                 onClick={() => { onChange(option.value); setIsOpen(false); }}
-                                className={clsx(
-                                    "relative flex cursor-pointer select-none items-center rounded-lg px-3 py-2 text-sm outline-none transition-colors hover:bg-slate-100 dark:hover:bg-slate-800",
-                                    value === option.value ? "bg-slate-100 dark:bg-slate-800 font-bold" : ""
+                                className={cn(
+                                    "relative flex cursor-pointer select-none items-center rounded-md px-3 py-2 text-sm outline-none transition-colors hover:bg-accent hover:text-accent-foreground",
+                                    value === option.value && "bg-accent"
                                 )}
                             >
                                 <span className="flex-1 truncate">{option.label}</span>
-                                {value === option.value && <Check className="ml-auto h-4 w-4 text-orange-600" />}
+                                {value === option.value && <Check className="ml-auto h-4 w-4 text-primary" />}
                             </div>
                         ))}
                     </div>
@@ -87,6 +95,8 @@ export const PeopleDirectory: React.FC = () => {
     const [contactForm, setContactForm] = useState<Partial<Contact>>({ name: '', emails: [''], role: '', phone: '', avatarUrl: '', linkedinUrl: '', isMainContact: false, gender: 'not_specified' });
     const [selectedCompanyId, setSelectedCompanyId] = useState<string>('');
     const [newCompanyForm, setNewCompanyForm] = useState<{name: string, type: CompanyType, importance: Priority}>({ name: '', type: 'PME', importance: 'medium' });
+    const [formError, setFormError] = useState<string>('');
+    const [isSaving, setIsSaving] = useState(false);
 
     const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -142,6 +152,7 @@ export const PeopleDirectory: React.FC = () => {
         setContactForm({ name: '', emails: [''], role: '', phone: '', avatarUrl: '', linkedinUrl: '', isMainContact: false, gender: 'not_specified' });
         setSelectedCompanyId('');
         setIsCreatingCompany(false);
+        setFormError('');
         setIsModalOpen(true);
     };
 
@@ -159,13 +170,47 @@ export const PeopleDirectory: React.FC = () => {
         });
         setSelectedCompanyId(contact.companyId);
         setIsCreatingCompany(false);
+        setFormError('');
         setIsModalOpen(true);
     };
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
+        setFormError('');
+        
+        // Validation
+        if (!contactForm.name?.trim()) {
+            setFormError('Le nom du contact est requis');
+            return;
+        }
+        
+        if (!contactForm.role?.trim()) {
+            setFormError('Le poste est requis');
+            return;
+        }
+        
+        const cleanedEmails = contactForm.emails?.filter(em => em.trim() !== "") || [];
+        if (cleanedEmails.length === 0) {
+            setFormError('Au moins un email est requis');
+            return;
+        }
+        
+        // Vérifier entreprise pour création
+        if (!editingContact) {
+            if (isCreatingCompany) {
+                if (!newCompanyForm.name?.trim()) {
+                    setFormError('Le nom de l\'entreprise est requis');
+                    return;
+                }
+            } else if (!selectedCompanyId) {
+                setFormError('Veuillez sélectionner une entreprise ou en créer une nouvelle');
+                return;
+            }
+        }
+        
+        setIsSaving(true);
+        
         try {
-            const cleanedEmails = contactForm.emails?.filter(em => em.trim() !== "") || [];
             const finalData = { ...contactForm, emails: cleanedEmails };
 
             if (editingContact) {
@@ -173,188 +218,338 @@ export const PeopleDirectory: React.FC = () => {
             } else {
                 let targetCompanyId = selectedCompanyId;
                 if (isCreatingCompany) {
-                    if (!newCompanyForm.name) return;
                     const newCo = await companyService.create(newCompanyForm);
                     targetCompanyId = newCo.id;
                 }
-                if (!targetCompanyId) return;
                 await companyService.addContact(targetCompanyId, finalData);
             }
             setIsModalOpen(false);
             loadData();
             window.dispatchEvent(new Event('companies-updated'));
-        } catch (error) { console.error(error); }
+        } catch (error) { 
+            console.error(error);
+            setFormError('Une erreur est survenue lors de l\'enregistrement');
+        } finally {
+            setIsSaving(false);
+        }
     };
 
     return (
-        <div className="space-y-8 animate-in fade-in duration-500">
-             <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
+        <div className="space-y-6">
+            {/* Header */}
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                 <div>
-                    <h1 className="text-3xl font-black tracking-tight text-slate-900 dark:text-slate-100 uppercase">Annuaire Contacts</h1>
-                    <p className="text-slate-500 dark:text-slate-400 font-medium mt-1">Gérez l'ensemble des relations stratégiques de votre portefeuille.</p>
+                    <h1 className="text-2xl font-bold tracking-tight">Annuaire Contacts</h1>
+                    <p className="text-muted-foreground">Gérez vos contacts et relations professionnelles</p>
                 </div>
-                 <button onClick={openCreateModal} className="inline-flex items-center justify-center rounded-2xl bg-primary px-6 py-3 text-sm font-black uppercase tracking-widest text-white shadow-[0_10px_30px_rgba(234,88,12,0.3)] hover:scale-105 transition-all active:scale-95">
-                    <Plus className="mr-2 h-4 w-4" /> Ajouter Contact
-                </button>
+                <Button onClick={openCreateModal}>
+                    <Plus className="h-4 w-4" />
+                    Ajouter un contact
+                </Button>
             </div>
 
-            <div className="rounded-[2rem] border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 overflow-hidden shadow-2xl">
-                <div className="p-6 border-b border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-950/50">
-                    <div className="relative max-w-md">
-                        <Search className="absolute left-4 top-3 h-4 w-4 text-slate-400" />
-                        <input type="text" placeholder="Rechercher par nom, email ou poste..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className="h-11 w-full rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 pl-11 pr-4 text-sm text-slate-900 dark:text-slate-100 outline-none focus:ring-2 focus:ring-primary/20 transition-all" />
+            {/* Search & Table Card */}
+            <Card>
+                <CardHeader className="pb-4">
+                    <div className="relative max-w-sm">
+                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                        <Input 
+                            type="text" 
+                            placeholder="Rechercher par nom, email ou poste..." 
+                            value={searchTerm} 
+                            onChange={(e) => setSearchTerm(e.target.value)} 
+                            className="pl-9"
+                        />
                     </div>
-                </div>
+                </CardHeader>
                 
-                <div className="overflow-x-auto">
-                    <table className="w-full text-left text-sm">
-                        <thead className="bg-slate-50/50 dark:bg-slate-950/50 text-slate-500 dark:text-slate-500 border-b dark:border-slate-800">
-                            <tr>
-                                <th className="px-8 py-5 font-black uppercase tracking-[0.1em] text-[10px]">Nom Complet</th>
-                                <th className="px-8 py-5 font-black uppercase tracking-[0.1em] text-[10px]">Rôle & Poste</th>
-                                <th className="px-8 py-5 font-black uppercase tracking-[0.1em] text-[10px]">Entreprise</th>
-                                <th className="px-8 py-5 font-black uppercase tracking-[0.1em] text-[10px]">Communication</th>
-                                <th className="px-8 py-5 font-black uppercase tracking-[0.1em] text-[10px] text-right">Actions</th>
-                            </tr>
-                        </thead>
-                        <tbody className="divide-y divide-slate-100 dark:divide-slate-800 text-slate-900 dark:text-slate-100">
-                            {loading ? (
-                                <tr><td colSpan={5} className="px-8 py-20 text-center text-slate-400"><Loader2 className="h-8 w-8 animate-spin mx-auto mb-2 text-primary" /><p className="text-[10px] font-black uppercase tracking-widest">Chargement de l'annuaire</p></td></tr>
-                            ) : filteredContacts.length === 0 ? (
-                                <tr><td colSpan={5} className="px-8 py-20 text-center text-slate-400 italic font-medium">Aucun contact trouvé dans votre base Lexia.</td></tr>
-                            ) : (
-                                filteredContacts.map((contact) => (
-                                    <tr key={contact.id} className="hover:bg-slate-50/80 dark:hover:bg-slate-800/40 transition-colors group cursor-pointer" onClick={() => openEditModal(contact)}>
-                                        <td className="px-8 py-5">
-                                            <div className="flex items-center gap-4">
-                                                <div className="h-11 w-11 flex-shrink-0 rounded-[1rem] bg-slate-100 dark:bg-slate-800 flex items-center justify-center overflow-hidden border-2 border-white dark:border-slate-700 shadow-sm group-hover:border-primary/30 transition-all">
-                                                    {contact.avatarUrl ? <img src={contact.avatarUrl} alt={contact.name} className="h-full w-full object-cover" /> : <span className="font-black text-slate-500 dark:text-slate-400 text-xs tracking-tighter">{getInitials(contact.name)}</span>}
-                                                </div>
-                                                <div>
-                                                    <div className="font-bold text-slate-900 dark:text-slate-100 group-hover:text-primary transition-colors">{contact.name}</div>
-                                                    {contact.isMainContact && <span className="mt-1 text-[8px] bg-orange-100 text-orange-600 dark:bg-orange-950/40 dark:text-orange-400 px-2 py-0.5 rounded-full uppercase font-black tracking-widest border border-orange-200/50 dark:border-orange-900/50 inline-block">Principal</span>}
-                                                </div>
-                                            </div>
-                                        </td>
-                                        <td className="px-8 py-5">
-                                            <p className="text-slate-700 dark:text-slate-300 font-medium">{contact.role}</p>
-                                        </td>
-                                        <td className="px-8 py-5">
-                                            <div className="flex items-center gap-2.5 hover:text-primary transition-colors" onClick={(e) => { e.stopPropagation(); navigate(`/company/${contact.companyId}`); }}>
-                                                <div className="h-7 w-7 rounded-lg bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 flex items-center justify-center overflow-hidden shrink-0">
-                                                    {contact.companyLogo ? <img src={contact.companyLogo} className="h-full w-full object-cover" /> : <Building2 className="h-4 w-4 text-slate-400" />}
-                                                </div>
-                                                <span className="font-bold text-slate-600 dark:text-slate-200 group-hover:text-primary underline underline-offset-4 decoration-slate-200 dark:decoration-slate-800">{contact.companyName}</span>
-                                            </div>
-                                        </td>
-                                        <td className="px-8 py-5">
-                                            <div className="flex flex-col gap-1">
-                                                {contact.emails.slice(0, 1).map((e, idx) => (
-                                                    <span key={idx} className="text-slate-500 dark:text-slate-400 font-mono text-[11px] truncate max-w-[200px]">{e}</span>
-                                                ))}
-                                                {contact.phone && <span className="text-slate-400 dark:text-slate-500 text-[10px] font-bold">{contact.phone}</span>}
-                                            </div>
-                                        </td>
-                                        <td className="px-8 py-5 text-right">
-                                            <button onClick={(e) => { e.stopPropagation(); navigate('/inbox', { state: { composeTo: contact.emails[0] } }); }} className="p-3 text-slate-400 hover:text-primary dark:hover:text-primary rounded-xl transition-all hover:bg-white dark:hover:bg-slate-800 shadow-sm border border-transparent hover:border-slate-100 dark:hover:border-slate-700">
-                                                <Mail className="h-4 w-4" />
-                                            </button>
+                <CardContent className="p-0">
+                    <div className="overflow-x-auto">
+                        <table className="w-full text-left text-sm">
+                            <thead className="bg-muted/50 text-muted-foreground border-b">
+                                <tr>
+                                    <th className="px-6 py-3 font-medium">Contact</th>
+                                    <th className="px-6 py-3 font-medium">Poste</th>
+                                    <th className="px-6 py-3 font-medium">Entreprise</th>
+                                    <th className="px-6 py-3 font-medium">Contact</th>
+                                    <th className="px-6 py-3 font-medium text-right">Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody className="divide-y">
+                                {loading ? (
+                                    <tr>
+                                        <td colSpan={5} className="px-6 py-12 text-center">
+                                            <Loader2 className="h-6 w-6 animate-spin mx-auto mb-2 text-primary" />
+                                            <p className="text-sm text-muted-foreground">Chargement...</p>
                                         </td>
                                     </tr>
-                                ))
-                            )}
-                        </tbody>
-                    </table>
-                </div>
-            </div>
+                                ) : filteredContacts.length === 0 ? (
+                                    <tr>
+                                        <td colSpan={5} className="px-6 py-12 text-center text-muted-foreground">
+                                            Aucun contact trouvé
+                                        </td>
+                                    </tr>
+                                ) : (
+                                    filteredContacts.map((contact) => (
+                                        <tr 
+                                            key={contact.id} 
+                                            className="hover:bg-muted/50 transition-colors cursor-pointer" 
+                                            onClick={() => openEditModal(contact)}
+                                        >
+                                            <td className="px-6 py-4">
+                                                <div className="flex items-center gap-3">
+                                                    <Avatar>
+                                                        {contact.avatarUrl ? (
+                                                            <AvatarImage src={contact.avatarUrl} alt={contact.name} />
+                                                        ) : null}
+                                                        <AvatarFallback>{getInitials(contact.name)}</AvatarFallback>
+                                                    </Avatar>
+                                                    <div>
+                                                        <div className="font-medium">{contact.name}</div>
+                                                        {contact.isMainContact && (
+                                                            <Badge variant="default" className="mt-1 text-[10px]">Principal</Badge>
+                                                        )}
+                                                    </div>
+                                                </div>
+                                            </td>
+                                            <td className="px-6 py-4 text-muted-foreground">
+                                                {contact.role}
+                                            </td>
+                                            <td className="px-6 py-4">
+                                                <div 
+                                                    className="flex items-center gap-2 hover:text-primary transition-colors" 
+                                                    onClick={(e) => { e.stopPropagation(); navigate(`/company/${contact.companyId}`); }}
+                                                >
+                                                    <Avatar className="h-6 w-6">
+                                                        {contact.companyLogo ? (
+                                                            <AvatarImage src={contact.companyLogo} />
+                                                        ) : null}
+                                                        <AvatarFallback className="text-[10px]">
+                                                            <Building2 className="h-3 w-3" />
+                                                        </AvatarFallback>
+                                                    </Avatar>
+                                                    <span className="text-sm">{contact.companyName}</span>
+                                                </div>
+                                            </td>
+                                            <td className="px-6 py-4">
+                                                <div className="space-y-1">
+                                                    {contact.emails.slice(0, 1).map((e, idx) => (
+                                                        <span key={idx} className="text-muted-foreground text-xs font-mono block truncate max-w-[180px]">{e}</span>
+                                                    ))}
+                                                    {contact.phone && (
+                                                        <span className="text-muted-foreground text-xs flex items-center gap-1">
+                                                            <Phone className="h-3 w-3" />
+                                                            {contact.phone}
+                                                        </span>
+                                                    )}
+                                                </div>
+                                            </td>
+                                            <td className="px-6 py-4 text-right">
+                                                <Button 
+                                                    variant="ghost" 
+                                                    size="icon"
+                                                    onClick={(e) => { 
+                                                        e.stopPropagation(); 
+                                                        navigate('/inbox', { state: { composeTo: contact.emails[0] } }); 
+                                                    }}
+                                                >
+                                                    <Mail className="h-4 w-4" />
+                                                </Button>
+                                            </td>
+                                        </tr>
+                                    ))
+                                )}
+                            </tbody>
+                        </table>
+                    </div>
+                </CardContent>
+            </Card>
 
-            {/* Modal de création / Edition */}
+            {/* Modal */}
             {isModalOpen && (
-                <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4 animate-in fade-in duration-300">
-                    <div className="bg-white dark:bg-slate-900 w-full max-w-xl rounded-[2.5rem] shadow-[0_32px_64px_-12px_rgba(0,0,0,0.5)] border border-slate-200 dark:border-slate-800 overflow-hidden flex flex-col max-h-[95vh]">
-                        <div className="flex items-center justify-between p-7 border-b border-slate-100 dark:border-slate-800 shrink-0 bg-slate-50/30 dark:bg-slate-950/30">
-                            <div className="flex items-center gap-3">
-                                <div className="p-2.5 bg-primary/10 rounded-2xl">
-                                    <UserPlus className="h-6 w-6 text-primary" />
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+                    <Card className="w-full max-w-lg max-h-[90vh] flex flex-col">
+                        <CardHeader className="border-b">
+                            <div className="flex items-center justify-between">
+                                <div className="flex items-center gap-3">
+                                    <div className="p-2 bg-primary/10 rounded-lg">
+                                        <UserPlus className="h-5 w-5 text-primary" />
+                                    </div>
+                                    <div>
+                                        <CardTitle>{editingContact ? 'Modifier le contact' : 'Nouveau contact'}</CardTitle>
+                                        <CardDescription>
+                                            {editingContact ? 'Modifiez les informations du contact' : 'Ajoutez un nouveau contact à votre annuaire'}
+                                        </CardDescription>
+                                    </div>
                                 </div>
-                                <h2 className="text-xl font-black text-slate-900 dark:text-slate-100 uppercase tracking-tight">{editingContact ? 'Editer le Contact' : 'Nouveau Contact'}</h2>
+                                <Button variant="ghost" size="icon" onClick={() => setIsModalOpen(false)}>
+                                    <X className="h-5 w-5" />
+                                </Button>
                             </div>
-                            <button onClick={() => setIsModalOpen(false)} className="p-2 text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-2xl transition-all"><X className="h-6 w-6" /></button>
-                        </div>
+                        </CardHeader>
                         
-                        <form onSubmit={handleSubmit} className="overflow-y-auto p-8 space-y-8">
-                            {/* Avatar Section */}
-                            <div className="flex flex-col items-center gap-4">
-                                <div onClick={() => fileInputRef.current?.click()} className="h-28 w-28 rounded-[2.5rem] bg-slate-50 dark:bg-slate-950 border-2 border-dashed border-slate-200 dark:border-slate-800 flex items-center justify-center cursor-pointer hover:border-primary/50 hover:bg-orange-50/30 dark:hover:bg-orange-950/10 overflow-hidden relative group transition-all">
-                                    {contactForm.avatarUrl ? <img src={contactForm.avatarUrl} alt="Preview" className="h-full w-full object-cover" /> : <Camera className="h-10 w-10 text-slate-300 dark:text-slate-800 group-hover:text-primary transition-colors" />}
-                                    <div className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"><span className="text-[10px] text-white font-black uppercase tracking-[0.2em]">Changer</span></div>
+                        <form onSubmit={handleSubmit} className="overflow-y-auto flex-1 p-6 space-y-6">
+                            {/* Error */}
+                            {formError && (
+                                <div className="p-3 bg-destructive/10 border border-destructive/20 rounded-lg text-sm text-destructive">
+                                    {formError}
+                                </div>
+                            )}
+                            
+                            {/* Avatar */}
+                            <div className="flex flex-col items-center gap-3">
+                                <div 
+                                    onClick={() => fileInputRef.current?.click()} 
+                                    className="relative cursor-pointer group"
+                                >
+                                    <Avatar className="h-20 w-20">
+                                        {contactForm.avatarUrl ? (
+                                            <AvatarImage src={contactForm.avatarUrl} alt="Preview" />
+                                        ) : null}
+                                        <AvatarFallback className="text-lg">
+                                            <Camera className="h-8 w-8 text-muted-foreground" />
+                                        </AvatarFallback>
+                                    </Avatar>
+                                    <div className="absolute inset-0 rounded-full bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                                        <Camera className="h-6 w-6 text-white" />
+                                    </div>
                                 </div>
                                 <input type="file" ref={fileInputRef} className="hidden" accept="image/*" onChange={handleAvatarUpload} />
+                                <span className="text-xs text-muted-foreground">Cliquez pour ajouter une photo</span>
                             </div>
 
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                                <div className="space-y-2 md:col-span-2">
-                                    <label className="text-[10px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-widest ml-1">Nom complet du contact</label>
-                                    <input required type="text" value={contactForm.name} onChange={e => setContactForm({...contactForm, name: e.target.value})} className="w-full h-12 rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-950 px-5 text-sm text-slate-900 dark:text-slate-100 outline-none focus:ring-2 focus:ring-primary/20 transition-all" placeholder="ex: Jean Dupont" />
-                                </div>
+                            {/* Name */}
+                            <div className="space-y-2">
+                                <Label>Nom complet <span className="text-destructive">*</span></Label>
+                                <Input 
+                                    type="text" 
+                                    value={contactForm.name} 
+                                    onChange={e => setContactForm({...contactForm, name: e.target.value})} 
+                                    placeholder="ex: Jean Dupont" 
+                                />
+                            </div>
 
-                                <div className="space-y-3 md:col-span-2">
-                                    <div className="flex items-center justify-between mb-1">
-                                        <label className="text-[10px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-widest ml-1">Emails Professionnels</label>
-                                        <button type="button" onClick={handleAddEmailField} className="text-[10px] font-black text-primary hover:underline uppercase tracking-tighter">+ Ajouter</button>
+                            {/* Emails */}
+                            <div className="space-y-2">
+                                <div className="flex items-center justify-between">
+                                    <Label>Emails <span className="text-destructive">*</span></Label>
+                                    <Button type="button" variant="ghost" size="sm" onClick={handleAddEmailField}>
+                                        <Plus className="h-3 w-3 mr-1" />
+                                        Ajouter
+                                    </Button>
+                                </div>
+                                <div className="space-y-2">
+                                    {contactForm.emails?.map((email, idx) => (
+                                        <div key={idx} className="flex gap-2">
+                                            <Input 
+                                                type="email" 
+                                                value={email} 
+                                                onChange={e => handleEmailChange(idx, e.target.value)} 
+                                                placeholder="contact@entreprise.fr" 
+                                            />
+                                            <Button 
+                                                type="button" 
+                                                variant="outline" 
+                                                size="icon"
+                                                onClick={() => handleRemoveEmailField(idx)}
+                                            >
+                                                <Trash2 className="h-4 w-4" />
+                                            </Button>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+
+                            {/* Role & Phone */}
+                            <div className="grid grid-cols-2 gap-4">
+                                <div className="space-y-2">
+                                    <Label>Poste <span className="text-destructive">*</span></Label>
+                                    <Input 
+                                        type="text" 
+                                        value={contactForm.role} 
+                                        onChange={e => setContactForm({...contactForm, role: e.target.value})} 
+                                        placeholder="ex: Directeur Commercial" 
+                                    />
+                                </div>
+                                <div className="space-y-2">
+                                    <Label>Téléphone</Label>
+                                    <Input 
+                                        type="tel" 
+                                        value={contactForm.phone} 
+                                        onChange={e => setContactForm({...contactForm, phone: e.target.value})} 
+                                        placeholder="01 23 45 67 89" 
+                                    />
+                                </div>
+                            </div>
+
+                            {/* Company */}
+                            <div className="space-y-3 pt-4 border-t">
+                                <Label>Entreprise {!editingContact && <span className="text-destructive">*</span>}</Label>
+                                {editingContact ? (
+                                    <div className="flex items-center gap-3 p-3 bg-muted rounded-lg">
+                                        <Building2 className="h-4 w-4 text-muted-foreground" />
+                                        <span className="font-medium">{editingContact.companyName}</span>
                                     </div>
+                                ) : (
                                     <div className="space-y-3">
-                                        {contactForm.emails?.map((email, idx) => (
-                                            <div key={idx} className="flex gap-3 animate-in slide-in-from-left-2 duration-300" style={{ animationDelay: `${idx * 50}ms` }}>
-                                                <input required type="email" value={email} onChange={e => handleEmailChange(idx, e.target.value)} className="flex-1 h-12 rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-950 px-5 text-sm text-slate-900 dark:text-slate-100 outline-none focus:ring-2 focus:ring-primary/20 transition-all font-mono" placeholder="contact@entreprise.fr" />
-                                                <button type="button" onClick={() => handleRemoveEmailField(idx)} className="p-3.5 text-slate-400 hover:text-red-500 dark:hover:text-red-400 bg-slate-50/50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-2xl transition-all"><Trash2 className="h-5 w-5" /></button>
+                                        <CustomSelect 
+                                            value={selectedCompanyId} 
+                                            onChange={(val) => {
+                                                setSelectedCompanyId(val);
+                                                if (val) setIsCreatingCompany(false);
+                                            }} 
+                                            options={companies.map(c => ({ value: c.id, label: c.name }))} 
+                                            placeholder="Sélectionner une entreprise..." 
+                                        />
+                                        
+                                        <div className="flex items-center gap-2">
+                                            <input 
+                                                type="checkbox" 
+                                                id="isNew" 
+                                                checked={isCreatingCompany} 
+                                                onChange={e => {
+                                                    setIsCreatingCompany(e.target.checked);
+                                                    if (e.target.checked) setSelectedCompanyId('');
+                                                }} 
+                                                className="rounded border-input" 
+                                            />
+                                            <Label htmlFor="isNew" className="text-sm font-normal cursor-pointer">
+                                                Créer une nouvelle entreprise
+                                            </Label>
+                                        </div>
+                                        
+                                        {isCreatingCompany && (
+                                            <div className="p-4 bg-muted/50 rounded-lg border space-y-3">
+                                                <Input 
+                                                    type="text" 
+                                                    placeholder="Nom de l'entreprise..." 
+                                                    value={newCompanyForm.name} 
+                                                    onChange={e => setNewCompanyForm({...newCompanyForm, name: e.target.value})} 
+                                                />
                                             </div>
-                                        ))}
+                                        )}
                                     </div>
-                                </div>
-
-                                <div className="space-y-2">
-                                    <label className="text-[10px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-widest ml-1">Poste & Titre</label>
-                                    <input required type="text" value={contactForm.role} onChange={e => setContactForm({...contactForm, role: e.target.value})} className="w-full h-12 rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-950 px-5 text-sm text-slate-900 dark:text-slate-100 outline-none focus:ring-2 focus:ring-primary/20 transition-all" placeholder="ex: Directeur Commercial" />
-                                </div>
-                                <div className="space-y-2">
-                                    <label className="text-[10px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-widest ml-1">Téléphone</label>
-                                    <input type="tel" value={contactForm.phone} onChange={e => setContactForm({...contactForm, phone: e.target.value})} className="w-full h-12 rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-950 px-5 text-sm text-slate-900 dark:text-slate-100 outline-none focus:ring-2 focus:ring-primary/20 transition-all" placeholder="01 23 45 67 89" />
-                                </div>
-
-                                <div className="pt-4 md:col-span-2 border-t dark:border-slate-800">
-                                    <label className="text-[10px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-widest ml-1 mb-4 block">Entreprise Ratachée</label>
-                                    {editingContact ? (
-                                        <div className="p-5 bg-slate-50 dark:bg-slate-950/50 border border-slate-200 dark:border-slate-800 rounded-[1.5rem] font-bold text-sm text-slate-900 dark:text-slate-100 flex items-center gap-3 shadow-inner">
-                                            <div className="h-8 w-8 bg-white dark:bg-slate-900 rounded-lg flex items-center justify-center border dark:border-slate-800">
-                                                <Building2 className="h-4 w-4 text-primary" />
-                                            </div>
-                                            {editingContact.companyName}
-                                        </div>
-                                    ) : (
-                                        <div className="space-y-5">
-                                            <CustomSelect value={selectedCompanyId} onChange={setSelectedCompanyId} options={companies.map(c => ({ value: c.id, label: c.name }))} placeholder="Sélectionner une entreprise existante..." />
-                                            <div className="flex items-center gap-3 p-4 bg-slate-50/50 dark:bg-slate-950/50 rounded-2xl border border-slate-100 dark:border-slate-800">
-                                                <input type="checkbox" id="isNew" checked={isCreatingCompany} onChange={e => setIsCreatingCompany(e.target.checked)} className="h-5 w-5 rounded-lg border-slate-300 dark:border-slate-700 text-primary transition-all cursor-pointer" />
-                                                <label htmlFor="isNew" className="text-xs font-black text-slate-600 dark:text-slate-400 uppercase tracking-tighter cursor-pointer">Créer une nouvelle entité entreprise</label>
-                                            </div>
-                                            {isCreatingCompany && (
-                                                <div className="p-6 bg-primary/5 dark:bg-primary/10 rounded-3xl border border-primary/20 animate-in slide-in-from-top-3 duration-400 space-y-4">
-                                                    <input required type="text" placeholder="Nom de l'entreprise..." value={newCompanyForm.name} onChange={e => setNewCompanyForm({...newCompanyForm, name: e.target.value})} className="w-full h-11 px-5 rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 text-sm text-slate-900 dark:text-slate-100 outline-none focus:ring-2 focus:ring-primary/30 shadow-sm" />
-                                                    <div className="flex items-center gap-2 text-[9px] font-black text-primary uppercase tracking-[0.2em] px-1"><Sparkles className="h-3 w-3" /> Intelligence Lexia activée</div>
-                                                </div>
-                                            )}
-                                        </div>
-                                    )}
-                                </div>
+                                )}
                             </div>
                             
-                            <div className="flex justify-end gap-4 pt-8 border-t border-slate-100 dark:border-slate-800 shrink-0">
-                                <button type="button" onClick={() => setIsModalOpen(false)} className="px-8 py-3 text-xs font-black uppercase tracking-[0.2em] text-slate-400 dark:text-slate-500 hover:text-slate-900 dark:hover:text-slate-100 transition-all">Annuler</button>
-                                <button type="submit" className="px-12 py-3.5 text-xs font-black uppercase tracking-[0.2em] text-white bg-slate-900 dark:bg-primary rounded-2xl shadow-xl hover:scale-105 active:scale-95 transition-all">Enregistrer</button>
+                            {/* Actions */}
+                            <div className="flex justify-end gap-3 pt-4 border-t">
+                                <Button type="button" variant="outline" onClick={() => setIsModalOpen(false)}>
+                                    Annuler
+                                </Button>
+                                <Button type="submit" disabled={isSaving}>
+                                    {isSaving ? (
+                                        <>
+                                            <Loader2 className="h-4 w-4 animate-spin" />
+                                            Enregistrement...
+                                        </>
+                                    ) : (
+                                        'Enregistrer'
+                                    )}
+                                </Button>
                             </div>
                         </form>
-                    </div>
+                    </Card>
                 </div>
             )}
         </div>
