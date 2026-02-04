@@ -8,13 +8,14 @@ import {
     ArrowLeft, Globe, Mail, Phone, Calendar, 
     Plus, X, MessageSquare, Clock, Check,
     AlertCircle, Sparkles, ChevronRight, User,
-    FileText, ExternalLink, AtSign, Settings, Trash2, Building2, Upload
+    FileText, ExternalLink, AtSign, Settings, Trash2, Building2, Upload, Link, UserPlus, Users
 } from 'lucide-react';
 import { companyService } from '../services/supabase';
 import { workspaceService } from '../services/workspace';
+import { authService, LEXIA_TEAM } from '../services/auth';
 import { MentionInput } from '../components/MentionInput';
 import { ScheduleMeetingModal } from '../components/ScheduleMeetingModal';
-import { Company, Contact, PipelineStage, Activity, CompanyType, Priority } from '../types';
+import { Company, Contact, PipelineStage, Activity, CompanyType, Priority, TeamMember, CompanyDocument } from '../types';
 import { cn, getInitials, formatRelativeTime } from '../lib/utils';
 import { PIPELINE_COLUMNS } from '../constants';
 
@@ -39,6 +40,13 @@ export const CompanyDetail: React.FC = () => {
     });
     const [contactForm, setContactForm] = useState({ name: '', email: '', role: '', phone: '', isMain: false });
     const [editingContactId, setEditingContactId] = useState<string | null>(null);
+    
+    // Team modal
+    const [showTeamModal, setShowTeamModal] = useState(false);
+    
+    // Document modal
+    const [showDocumentModal, setShowDocumentModal] = useState(false);
+    const [documentForm, setDocumentForm] = useState({ name: '', url: '', type: 'pdf' as CompanyDocument['type'] });
 
     useEffect(() => {
         if (id) {
@@ -172,6 +180,58 @@ export const CompanyDetail: React.FC = () => {
         // Refresh
         const updated = await companyService.getById(company.id);
         if (updated) setCompany(updated);
+    };
+
+    // Team handlers
+    const handleAddTeamMember = async (member: typeof LEXIA_TEAM[0]) => {
+        if (!company) return;
+        // Check if already in team
+        if (company.team.some(m => m.email === member.email)) return;
+        
+        await companyService.addTeamMember(company.id, {
+            name: member.name,
+            role: member.role,
+            avatarUrl: member.avatarUrl,
+            email: member.email
+        });
+        
+        const updated = await companyService.getById(company.id);
+        if (updated) setCompany(updated);
+    };
+
+    const handleRemoveTeamMember = async (memberId: string) => {
+        if (!company) return;
+        if (confirm('Retirer ce membre de l\'équipe ?')) {
+            await companyService.removeTeamMember(company.id, memberId);
+            const updated = await companyService.getById(company.id);
+            if (updated) setCompany(updated);
+        }
+    };
+
+    // Document handlers
+    const handleAddDocument = async (e: React.FormEvent) => {
+        e.preventDefault();
+        if (!company || !documentForm.name || !documentForm.url) return;
+        
+        await companyService.addDocument(company.id, {
+            name: documentForm.name,
+            url: documentForm.url,
+            type: documentForm.type
+        });
+        
+        setShowDocumentModal(false);
+        setDocumentForm({ name: '', url: '', type: 'pdf' });
+        const updated = await companyService.getById(company.id);
+        if (updated) setCompany(updated);
+    };
+
+    const handleRemoveDocument = async (docId: string) => {
+        if (!company) return;
+        if (confirm('Supprimer ce document ?')) {
+            await companyService.removeDocument(company.id, docId);
+            const updated = await companyService.getById(company.id);
+            if (updated) setCompany(updated);
+        }
     };
 
     if (loading) {
@@ -440,54 +500,113 @@ export const CompanyDetail: React.FC = () => {
 
                     {/* Team */}
                     <Card>
-                        <h2 className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3">
-                            Équipe Lexia
-                        </h2>
-                        <div className="flex -space-x-2">
-                            {company.team.map(m => (
-                                <div 
-                                    key={m.id} 
-                                    className="h-8 w-8 rounded-full bg-muted border-2 border-background overflow-hidden"
-                                    title={m.name}
-                                >
-                                    {m.avatarUrl ? (
-                                        <img src={m.avatarUrl} alt={m.name} className="h-full w-full object-cover" />
-                                    ) : (
-                                        <div className="h-full w-full flex items-center justify-center text-[10px] font-bold">
-                                            {getInitials(m.name)}
-                                        </div>
-                                    )}
-                                </div>
-                            ))}
+                        <div className="flex items-center justify-between mb-3">
+                            <h2 className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                                Équipe Lexia
+                            </h2>
+                            <button 
+                                onClick={() => setShowTeamModal(true)}
+                                className="text-xs text-primary hover:underline flex items-center gap-1"
+                            >
+                                <Settings className="h-3 w-3" /> Gérer
+                            </button>
                         </div>
-                        <p className="mt-2 text-xs text-muted-foreground">
-                            {company.team.map(m => m.name).join(', ')}
-                        </p>
+                        {company.team.length === 0 ? (
+                            <button 
+                                onClick={() => setShowTeamModal(true)}
+                                className="w-full py-4 border border-dashed rounded-lg text-sm text-muted-foreground hover:border-primary hover:text-primary transition-colors"
+                            >
+                                + Assigner l'équipe
+                            </button>
+                        ) : (
+                            <>
+                                <div className="space-y-2">
+                                    {company.team.map(m => (
+                                        <div key={m.id} className="flex items-center gap-3 group">
+                                            <div 
+                                                className="h-8 w-8 rounded-full bg-muted border-2 border-background overflow-hidden shrink-0"
+                                                title={m.name}
+                                            >
+                                                {m.avatarUrl ? (
+                                                    <img src={m.avatarUrl} alt={m.name} className="h-full w-full object-cover" />
+                                                ) : (
+                                                    <div className="h-full w-full flex items-center justify-center text-[10px] font-bold">
+                                                        {getInitials(m.name)}
+                                                    </div>
+                                                )}
+                                            </div>
+                                            <div className="flex-1 min-w-0">
+                                                <p className="text-sm font-medium truncate">{m.name}</p>
+                                                <p className="text-[10px] text-muted-foreground">{m.role}</p>
+                                            </div>
+                                            <button 
+                                                onClick={() => handleRemoveTeamMember(m.id)}
+                                                className="p-1 hover:bg-red-50 hover:text-red-500 rounded opacity-0 group-hover:opacity-100 transition-opacity dark:hover:bg-red-900/20"
+                                            >
+                                                <X className="h-3 w-3" />
+                                            </button>
+                                        </div>
+                                    ))}
+                                </div>
+                            </>
+                        )}
                     </Card>
 
                     {/* Documents */}
-                    {company.documents && company.documents.length > 0 && (
-                        <Card>
-                            <h2 className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3">
+                    <Card>
+                        <div className="flex items-center justify-between mb-3">
+                            <h2 className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
                                 Documents
                             </h2>
+                            <button 
+                                onClick={() => setShowDocumentModal(true)}
+                                className="text-xs text-primary hover:underline flex items-center gap-1"
+                            >
+                                <Plus className="h-3 w-3" /> Ajouter
+                            </button>
+                        </div>
+                        {(!company.documents || company.documents.length === 0) ? (
+                            <button 
+                                onClick={() => setShowDocumentModal(true)}
+                                className="w-full py-4 border border-dashed rounded-lg text-sm text-muted-foreground hover:border-primary hover:text-primary transition-colors"
+                            >
+                                + Ajouter un document
+                            </button>
+                        ) : (
                             <div className="space-y-2">
                                 {company.documents.map(doc => (
-                                    <a 
+                                    <div 
                                         key={doc.id}
-                                        href={doc.url}
-                                        target="_blank"
-                                        rel="noreferrer"
-                                        className="flex items-center gap-2 p-2 rounded-lg hover:bg-muted text-sm"
+                                        className="flex items-center gap-2 p-2 rounded-lg hover:bg-muted text-sm group"
                                     >
-                                        <FileText className="h-4 w-4 text-muted-foreground" />
-                                        <span className="truncate flex-1">{doc.name}</span>
-                                        <ExternalLink className="h-3 w-3 text-muted-foreground" />
-                                    </a>
+                                        <FileText className="h-4 w-4 text-muted-foreground shrink-0" />
+                                        <a 
+                                            href={doc.url}
+                                            target="_blank"
+                                            rel="noreferrer"
+                                            className="truncate flex-1 hover:text-primary"
+                                        >
+                                            {doc.name}
+                                        </a>
+                                        <button 
+                                            onClick={() => handleRemoveDocument(doc.id)}
+                                            className="p-1 hover:bg-red-50 hover:text-red-500 rounded opacity-0 group-hover:opacity-100 transition-opacity dark:hover:bg-red-900/20"
+                                        >
+                                            <Trash2 className="h-3 w-3" />
+                                        </button>
+                                        <a 
+                                            href={doc.url}
+                                            target="_blank"
+                                            rel="noreferrer"
+                                            className="p-1 hover:bg-muted rounded"
+                                        >
+                                            <ExternalLink className="h-3 w-3 text-muted-foreground" />
+                                        </a>
+                                    </div>
                                 ))}
                             </div>
-                        </Card>
-                    )}
+                        )}
+                    </Card>
 
                     {/* Quick actions */}
                     <Card className="bg-muted/50 border-0">
@@ -812,6 +931,173 @@ export const CompanyDetail: React.FC = () => {
                 company={company}
                 defaultAttendees={company?.contacts.map(c => c.emails[0]).filter(Boolean) || []}
             />
+
+            {/* Team Modal */}
+            {showTeamModal && (
+                <>
+                    <div className="fixed inset-0 z-50 bg-black/50" onClick={() => setShowTeamModal(false)} />
+                    <div className="fixed inset-x-4 top-[20%] z-50 mx-auto max-w-md bg-background border rounded-xl shadow-xl p-5">
+                        <div className="flex items-center justify-between mb-4">
+                            <div className="flex items-center gap-2">
+                                <Users className="h-5 w-5 text-primary" />
+                                <h2 className="font-medium">Gérer l'équipe</h2>
+                            </div>
+                            <button onClick={() => setShowTeamModal(false)} className="p-1 hover:bg-muted rounded">
+                                <X className="h-4 w-4" />
+                            </button>
+                        </div>
+                        
+                        <div className="space-y-4">
+                            {/* Current team */}
+                            {company.team.length > 0 && (
+                                <div>
+                                    <p className="text-xs text-muted-foreground mb-2">Équipe actuelle</p>
+                                    <div className="space-y-2">
+                                        {company.team.map(m => (
+                                            <div key={m.id} className="flex items-center gap-3 p-2 bg-muted/50 rounded-lg">
+                                                <div className="h-8 w-8 rounded-full bg-muted overflow-hidden">
+                                                    {m.avatarUrl ? (
+                                                        <img src={m.avatarUrl} alt={m.name} className="h-full w-full object-cover" />
+                                                    ) : (
+                                                        <div className="h-full w-full flex items-center justify-center text-[10px] font-bold">
+                                                            {getInitials(m.name)}
+                                                        </div>
+                                                    )}
+                                                </div>
+                                                <div className="flex-1">
+                                                    <p className="text-sm font-medium">{m.name}</p>
+                                                    <p className="text-[10px] text-muted-foreground">{m.role}</p>
+                                                </div>
+                                                <button 
+                                                    onClick={() => handleRemoveTeamMember(m.id)}
+                                                    className="p-1.5 hover:bg-red-100 hover:text-red-500 rounded dark:hover:bg-red-900/30"
+                                                >
+                                                    <Trash2 className="h-3.5 w-3.5" />
+                                                </button>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                            )}
+                            
+                            {/* Available team members */}
+                            <div>
+                                <p className="text-xs text-muted-foreground mb-2">Ajouter un membre</p>
+                                <div className="space-y-2">
+                                    {LEXIA_TEAM.filter(m => !company.team.some(t => t.email === m.email)).map(member => (
+                                        <button
+                                            key={member.id}
+                                            onClick={() => handleAddTeamMember(member)}
+                                            className="w-full flex items-center gap-3 p-2 border border-dashed border-border rounded-lg hover:border-primary hover:bg-primary/5 transition-colors"
+                                        >
+                                            <div className="h-8 w-8 rounded-full bg-muted overflow-hidden">
+                                                {member.avatarUrl ? (
+                                                    <img src={member.avatarUrl} alt={member.name} className="h-full w-full object-cover" />
+                                                ) : (
+                                                    <div className="h-full w-full flex items-center justify-center text-[10px] font-bold">
+                                                        {getInitials(member.name)}
+                                                    </div>
+                                                )}
+                                            </div>
+                                            <div className="flex-1 text-left">
+                                                <p className="text-sm font-medium">{member.name}</p>
+                                                <p className="text-[10px] text-muted-foreground">{member.role}</p>
+                                            </div>
+                                            <Plus className="h-4 w-4 text-primary" />
+                                        </button>
+                                    ))}
+                                    {LEXIA_TEAM.filter(m => !company.team.some(t => t.email === m.email)).length === 0 && (
+                                        <p className="text-sm text-muted-foreground text-center py-4">
+                                            Toute l'équipe est déjà assignée
+                                        </p>
+                                    )}
+                                </div>
+                            </div>
+                        </div>
+
+                        <div className="flex justify-end mt-6">
+                            <button 
+                                onClick={() => setShowTeamModal(false)} 
+                                className="px-4 py-2 bg-primary text-primary-foreground rounded-lg text-sm font-medium"
+                            >
+                                Terminé
+                            </button>
+                        </div>
+                    </div>
+                </>
+            )}
+
+            {/* Document Modal */}
+            {showDocumentModal && (
+                <>
+                    <div className="fixed inset-0 z-50 bg-black/50" onClick={() => setShowDocumentModal(false)} />
+                    <div className="fixed inset-x-4 top-[20%] z-50 mx-auto max-w-md bg-background border rounded-xl shadow-xl p-5">
+                        <div className="flex items-center justify-between mb-4">
+                            <div className="flex items-center gap-2">
+                                <FileText className="h-5 w-5 text-primary" />
+                                <h2 className="font-medium">Ajouter un document</h2>
+                            </div>
+                            <button onClick={() => setShowDocumentModal(false)} className="p-1 hover:bg-muted rounded">
+                                <X className="h-4 w-4" />
+                            </button>
+                        </div>
+                        
+                        <form onSubmit={handleAddDocument} className="space-y-4">
+                            <div>
+                                <label className="block text-sm font-medium mb-1.5">Nom du document</label>
+                                <input
+                                    type="text"
+                                    required
+                                    value={documentForm.name}
+                                    onChange={e => setDocumentForm(f => ({ ...f, name: e.target.value }))}
+                                    placeholder="Ex: Proposition commerciale v2"
+                                    className="w-full px-3 py-2 rounded-lg border bg-background text-sm"
+                                />
+                            </div>
+                            <div>
+                                <label className="block text-sm font-medium mb-1.5">Lien / URL</label>
+                                <div className="flex items-center gap-2">
+                                    <Link className="h-4 w-4 text-muted-foreground" />
+                                    <input
+                                        type="url"
+                                        required
+                                        value={documentForm.url}
+                                        onChange={e => setDocumentForm(f => ({ ...f, url: e.target.value }))}
+                                        placeholder="https://drive.google.com/..."
+                                        className="flex-1 px-3 py-2 rounded-lg border bg-background text-sm"
+                                    />
+                                </div>
+                                <p className="text-xs text-muted-foreground mt-1">
+                                    Lien Google Drive, Dropbox, Notion, etc.
+                                </p>
+                            </div>
+                            <div>
+                                <label className="block text-sm font-medium mb-1.5">Type de document</label>
+                                <select
+                                    value={documentForm.type}
+                                    onChange={e => setDocumentForm(f => ({ ...f, type: e.target.value as CompanyDocument['type'] }))}
+                                    className="w-full px-3 py-2 rounded-lg border bg-background text-sm"
+                                >
+                                    <option value="pdf">PDF</option>
+                                    <option value="doc">Document Word</option>
+                                    <option value="sheet">Tableur</option>
+                                    <option value="slide">Présentation</option>
+                                    <option value="image">Image</option>
+                                    <option value="other">Autre</option>
+                                </select>
+                            </div>
+                            <div className="flex justify-end gap-2 pt-2">
+                                <button type="button" onClick={() => setShowDocumentModal(false)} className="px-3 py-2 text-sm">
+                                    Annuler
+                                </button>
+                                <button type="submit" className="px-4 py-2 bg-primary text-primary-foreground rounded-lg text-sm font-medium">
+                                    Ajouter
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+                </>
+            )}
         </div>
     );
 };
