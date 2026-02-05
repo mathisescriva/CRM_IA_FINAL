@@ -13,6 +13,7 @@ import { Toolbox } from './pages/Toolbox';
 import { Login } from './pages/Login';
 import { Settings } from './pages/Settings';
 import { Calendar } from './pages/Calendar';
+import Tasks from './pages/Tasks';
 import { authService } from './services/auth';
 
 // --- Auth Guard ---
@@ -67,6 +68,7 @@ const AppRoutes: React.FC = () => {
                     <Route path="/inbox" element={<Inbox />} />
                     <Route path="/toolbox" element={<Toolbox />} />
                     <Route path="/calendar" element={<Calendar />} />
+                    <Route path="/tasks" element={<Tasks />} />
                     <Route path="/settings" element={<Settings />} />
                 </Route>
 

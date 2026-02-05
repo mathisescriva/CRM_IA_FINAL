@@ -2,11 +2,18 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { companyService } from '../services/supabase';
-import { Company, CompanyType, Priority } from '../types';
+import { Company, CompanyType, Priority, EntityType, PartnerType, PipelineStage } from '../types';
 import { PriorityBadge, TypeBadge, UrgencyBadge } from '../components/ui/Badge';
 import { formatDate, getInitials } from '../lib/utils';
-import { Search, Filter, Mail, ExternalLink, Plus, X, ChevronRight, Building, Camera, ChevronDown, Check, Trash2, Loader2 } from 'lucide-react';
+import { PIPELINE_COLUMNS } from '../constants';
+import { Search, Filter, Mail, ExternalLink, Plus, X, ChevronRight, Building, Camera, ChevronDown, Check, Trash2, Loader2, Users, Handshake, Calendar, BarChart3 } from 'lucide-react';
 import { clsx } from 'clsx';
+
+// Helper function to get pipeline stage title
+const getPipelineTitle = (stage: PipelineStage): string => {
+    const column = PIPELINE_COLUMNS.find(col => col.id === stage);
+    return column?.title || stage;
+};
 
 // --- Custom Select Component ---
 interface SelectOption { label: string; value: string; }
@@ -81,16 +88,30 @@ export const Directory: React.FC = () => {
     const [showFilters, setShowFilters] = useState(false);
     const [typeFilter, setTypeFilter] = useState<CompanyType | 'all'>('all');
     const [priorityFilter, setPriorityFilter] = useState<Priority | 'all'>('all');
+    const [entityTypeFilter, setEntityTypeFilter] = useState<EntityType | 'all'>('all');
 
     // Add Company Modal State
     const [isAddModalOpen, setIsAddModalOpen] = useState(false);
-    const [newCompany, setNewCompany] = useState<{name: string, type: CompanyType, website: string, importance: Priority, logoUrl?: string}>({
+    const [newCompany, setNewCompany] = useState<{
+        name: string, 
+        type: CompanyType, 
+        website: string, 
+        importance: Priority, 
+        logoUrl?: string,
+        entityType: EntityType,
+        partnerType?: PartnerType
+    }>({
         name: '',
         type: 'PME',
         website: '',
-        importance: 'medium'
+        importance: 'medium',
+        entityType: 'client'
     });
     const logoInputRef = useRef<HTMLInputElement>(null);
+    
+    // Stats
+    const clientsCount = companies.filter(c => c.entityType === 'client').length;
+    const partnersCount = companies.filter(c => c.entityType === 'partner').length;
 
     const refreshCompanies = async () => {
         try {
@@ -113,6 +134,9 @@ export const Directory: React.FC = () => {
     }, [location.state]);
 
     const filteredCompanies = companies.filter(c => {
+        // Filter by entity type
+        if (entityTypeFilter !== 'all' && c.entityType !== entityTypeFilter) return false;
+        
         const matchesSearch = c.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
                               c.type.toLowerCase().includes(searchTerm.toLowerCase());
         const matchesType = typeFilter === 'all' || c.type === typeFilter;
@@ -127,7 +151,13 @@ export const Directory: React.FC = () => {
             await companyService.create(newCompany);
             await refreshCompanies();
             setIsAddModalOpen(false);
-            setNewCompany({ name: '', type: 'PME', website: '', importance: 'medium' });
+            setNewCompany({ 
+                name: '', 
+                type: 'PME', 
+                website: '', 
+                importance: 'medium',
+                entityType: 'client'
+            });
         } catch (err) {
             alert("Erreur lors de la création.");
         } finally {
@@ -168,9 +198,16 @@ export const Directory: React.FC = () => {
         <div className="space-y-6 relative">
             {/* Header */}
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-                <div>
-                    <h1 className="text-3xl font-bold tracking-tight text-slate-900 dark:text-slate-50">Annuaire</h1>
-                    <p className="text-slate-500 dark:text-slate-400">Gérez vos relations clients et les détails de vos entreprises.</p>
+                <div className="flex items-center gap-4">
+                    <div className="h-12 w-12 rounded-xl flex items-center justify-center bg-gradient-to-br from-blue-500 to-purple-600">
+                        <Building className="h-6 w-6 text-white" />
+                    </div>
+                    <div>
+                        <h1 className="text-3xl font-bold tracking-tight text-slate-900 dark:text-slate-50">Entreprises</h1>
+                        <p className="text-slate-500 dark:text-slate-400">
+                            {clientsCount} clients · {partnersCount} partenaires
+                        </p>
+                    </div>
                 </div>
                 <div className="flex flex-col sm:flex-row gap-2">
                      <button 
@@ -181,13 +218,56 @@ export const Directory: React.FC = () => {
                         Filtres
                     </button>
                     <button 
-                        onClick={() => setIsAddModalOpen(true)}
-                        className="inline-flex items-center justify-center rounded-md bg-primary px-4 py-2 text-sm font-medium text-white shadow hover:bg-primary/90 w-full sm:w-auto transition-all active:scale-95"
+                        onClick={() => {
+                            setNewCompany(prev => ({ ...prev, entityType: entityTypeFilter === 'all' ? 'client' : entityTypeFilter }));
+                            setIsAddModalOpen(true);
+                        }}
+                        className="inline-flex items-center justify-center rounded-md px-4 py-2 text-sm font-medium text-white shadow w-full sm:w-auto transition-all active:scale-95 bg-primary hover:bg-primary/90"
                     >
                         <Plus className="mr-2 h-4 w-4" />
                         Nouvelle Entreprise
                     </button>
                 </div>
+            </div>
+
+            {/* Entity Type Tabs */}
+            <div className="flex items-center gap-2 p-1 bg-slate-100 dark:bg-slate-800 rounded-lg w-fit">
+                <button
+                    onClick={() => setEntityTypeFilter('all')}
+                    className={clsx(
+                        "flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium transition-all",
+                        entityTypeFilter === 'all' 
+                            ? "bg-white dark:bg-slate-950 text-slate-900 dark:text-slate-100 shadow-sm" 
+                            : "text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-300"
+                    )}
+                >
+                    <Building className="h-4 w-4" />
+                    Toutes ({companies.length})
+                </button>
+                <button
+                    onClick={() => setEntityTypeFilter('client')}
+                    className={clsx(
+                        "flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium transition-all",
+                        entityTypeFilter === 'client' 
+                            ? "bg-white dark:bg-slate-950 text-blue-600 dark:text-blue-400 shadow-sm" 
+                            : "text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-300"
+                    )}
+                >
+                    <Users className="h-4 w-4" />
+                    Clients ({clientsCount})
+                </button>
+                <button
+                    onClick={() => setEntityTypeFilter('partner')}
+                    className={clsx(
+                        "flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium transition-all",
+                        entityTypeFilter === 'partner' 
+                            ? "bg-white dark:bg-slate-950 text-purple-600 dark:text-purple-400 shadow-sm" 
+                            : "text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-300"
+                    )}
+                >
+                    <Handshake className="h-4 w-4" />
+                    Partenaires ({partnersCount})
+                </button>
             </div>
 
             {/* Filters Panel */}
@@ -221,7 +301,7 @@ export const Directory: React.FC = () => {
                     </div>
                     <div className="flex items-end">
                         <button 
-                            onClick={() => { setTypeFilter('all'); setPriorityFilter('all'); setSearchTerm(''); }}
+                            onClick={() => { setTypeFilter('all'); setPriorityFilter('all'); setSearchTerm(''); setEntityTypeFilter('all'); }}
                             className="flex items-center justify-center h-10 w-full sm:w-auto px-4 rounded-md border border-slate-200 bg-white text-sm font-medium text-slate-500 hover:bg-slate-50 hover:text-slate-900 transition-colors dark:bg-slate-950 dark:border-slate-800 dark:text-slate-400 dark:hover:bg-slate-900"
                         >
                             <X className="mr-2 h-3 w-3" /> Effacer
@@ -250,8 +330,8 @@ export const Directory: React.FC = () => {
                             <tr>
                                 <th className="px-6 py-3 font-medium">Entreprise</th>
                                 <th className="px-6 py-3 font-medium">Équipe</th>
-                                <th className="px-6 py-3 font-medium">Type</th>
-                                <th className="px-6 py-3 font-medium">Étape</th>
+                                <th className="px-6 py-3 font-medium">Catégorie</th>
+                                <th className="px-6 py-3 font-medium">État</th>
                                 <th className="px-6 py-3 font-medium">Urgence</th>
                                 <th className="px-6 py-3 font-medium text-right">Actions</th>
                             </tr>
@@ -317,9 +397,56 @@ export const Directory: React.FC = () => {
                                                 ))}
                                             </div>
                                         </td>
-                                        <td className="px-6 py-4"><TypeBadge type={company.type} /></td>
-                                        <td className="px-6 py-4 capitalize text-[11px] font-medium text-slate-500 dark:text-slate-400">{company.pipelineStage.replace('_', ' ')}</td>
-                                        <td className="px-6 py-4"><UrgencyBadge lastContactDate={company.lastContactDate} /></td>
+                                        {/* Catégorie (Client/Partenaire) */}
+                                        <td className="px-6 py-4">
+                                            <span className={clsx(
+                                                "inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-medium",
+                                                company.entityType === 'client' 
+                                                    ? "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400"
+                                                    : "bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400"
+                                            )}>
+                                                {company.entityType === 'client' ? (
+                                                    <><Users className="h-3 w-3" /> Client</>
+                                                ) : (
+                                                    <><Handshake className="h-3 w-3" /> Partenaire</>
+                                                )}
+                                            </span>
+                                        </td>
+                                        {/* État (Pipeline ou Type Partenaire) */}
+                                        <td className="px-6 py-4">
+                                            {company.entityType === 'partner' ? (
+                                                <span className={clsx(
+                                                    "inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-medium",
+                                                    company.partnerType === 'consulting' && "bg-purple-50 text-purple-600 dark:bg-purple-900/20 dark:text-purple-400",
+                                                    company.partnerType === 'technology' && "bg-sky-50 text-sky-600 dark:bg-sky-900/20 dark:text-sky-400",
+                                                    company.partnerType === 'financial' && "bg-emerald-50 text-emerald-600 dark:bg-emerald-900/20 dark:text-emerald-400",
+                                                    company.partnerType === 'legal' && "bg-amber-50 text-amber-600 dark:bg-amber-900/20 dark:text-amber-400",
+                                                    company.partnerType === 'marketing' && "bg-pink-50 text-pink-600 dark:bg-pink-900/20 dark:text-pink-400",
+                                                    (!company.partnerType || company.partnerType === 'other') && "bg-slate-50 text-slate-600 dark:bg-slate-800 dark:text-slate-400"
+                                                )}>
+                                                    {company.partnerType === 'consulting' && 'Consulting'}
+                                                    {company.partnerType === 'technology' && 'Technologie'}
+                                                    {company.partnerType === 'financial' && 'Finance'}
+                                                    {company.partnerType === 'legal' && 'Juridique'}
+                                                    {company.partnerType === 'marketing' && 'Marketing'}
+                                                    {(!company.partnerType || company.partnerType === 'other') && 'Autre'}
+                                                </span>
+                                            ) : (
+                                                <span className="text-[11px] font-medium text-slate-600 dark:text-slate-400">
+                                                    {getPipelineTitle(company.pipelineStage)}
+                                                </span>
+                                            )}
+                                        </td>
+                                        {/* Urgence */}
+                                        <td className="px-6 py-4">
+                                            {company.entityType === 'partner' ? (
+                                                <span className="text-xs text-slate-500 dark:text-slate-400">
+                                                    {company.partnerSince ? new Date(company.partnerSince).toLocaleDateString('fr-FR', { month: 'short', year: 'numeric' }) : '-'}
+                                                </span>
+                                            ) : (
+                                                <UrgencyBadge lastContactDate={company.lastContactDate} />
+                                            )}
+                                        </td>
                                         <td className="px-6 py-4 text-right">
                                             <div className="flex items-center justify-end gap-2">
                                                 <button 
@@ -355,12 +482,56 @@ export const Directory: React.FC = () => {
                 <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 backdrop-blur-sm p-4 animate-in fade-in duration-200">
                     <div className="bg-white dark:bg-slate-900 w-full max-w-lg rounded-xl shadow-xl border border-slate-200 dark:border-slate-800 overflow-hidden flex flex-col max-h-[90vh]">
                         <div className="flex items-center justify-between p-4 border-b border-slate-200 dark:border-slate-800 shrink-0">
-                            <h2 className="text-lg font-semibold text-slate-900 dark:text-slate-50">Ajouter une entreprise</h2>
+                            <div className="flex items-center gap-3">
+                                <div className={clsx(
+                                    "h-10 w-10 rounded-lg flex items-center justify-center",
+                                    newCompany.entityType === 'partner' ? "bg-purple-100 dark:bg-purple-950" : "bg-blue-100 dark:bg-blue-950"
+                                )}>
+                                    {newCompany.entityType === 'partner' ? (
+                                        <Handshake className="h-5 w-5 text-purple-600 dark:text-purple-400" />
+                                    ) : (
+                                        <Users className="h-5 w-5 text-blue-600 dark:text-blue-400" />
+                                    )}
+                                </div>
+                                <h2 className="text-lg font-semibold text-slate-900 dark:text-slate-50">
+                                    {newCompany.entityType === 'partner' ? 'Ajouter un partenaire' : 'Ajouter un client'}
+                                </h2>
+                            </div>
                             <button onClick={() => setIsAddModalOpen(false)} className="text-slate-500 hover:text-slate-900 dark:hover:text-slate-100">
                                 <X className="h-5 w-5" />
                             </button>
                         </div>
                         <form onSubmit={handleCreateCompany} className="p-6 space-y-4 overflow-y-auto">
+                            {/* Entity Type Toggle */}
+                            <div className="flex gap-2 p-1 bg-slate-100 dark:bg-slate-800 rounded-lg">
+                                <button
+                                    type="button"
+                                    onClick={() => setNewCompany({...newCompany, entityType: 'client', partnerType: undefined})}
+                                    className={clsx(
+                                        "flex-1 flex items-center justify-center gap-2 py-2 px-3 rounded-md text-sm font-medium transition-all",
+                                        newCompany.entityType === 'client' 
+                                            ? "bg-white dark:bg-slate-950 text-blue-600 shadow-sm" 
+                                            : "text-slate-500 hover:text-slate-700"
+                                    )}
+                                >
+                                    <Users className="h-4 w-4" />
+                                    Client
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={() => setNewCompany({...newCompany, entityType: 'partner'})}
+                                    className={clsx(
+                                        "flex-1 flex items-center justify-center gap-2 py-2 px-3 rounded-md text-sm font-medium transition-all",
+                                        newCompany.entityType === 'partner' 
+                                            ? "bg-white dark:bg-slate-950 text-purple-600 shadow-sm" 
+                                            : "text-slate-500 hover:text-slate-700"
+                                    )}
+                                >
+                                    <Handshake className="h-4 w-4" />
+                                    Partenaire
+                                </button>
+                            </div>
+
                             <div className="flex flex-col items-center gap-2 mb-4">
                                 <div 
                                     onClick={() => logoInputRef.current?.click()}
@@ -385,7 +556,9 @@ export const Directory: React.FC = () => {
                             </div>
 
                             <div>
-                                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Nom de l'entreprise</label>
+                                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
+                                    Nom {newCompany.entityType === 'partner' ? 'du partenaire' : 'du client'}
+                                </label>
                                 <input 
                                     required
                                     type="text" 
@@ -407,7 +580,7 @@ export const Directory: React.FC = () => {
                             </div>
                             <div className="grid grid-cols-2 gap-4">
                                 <div>
-                                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Type</label>
+                                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Type de structure</label>
                                     <CustomSelect 
                                         value={newCompany.type}
                                         onChange={(val) => setNewCompany({...newCompany, type: val as CompanyType})}
@@ -418,18 +591,36 @@ export const Directory: React.FC = () => {
                                         ]}
                                     />
                                 </div>
-                                <div>
-                                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Priorité</label>
-                                    <CustomSelect 
-                                        value={newCompany.importance}
-                                        onChange={(val) => setNewCompany({...newCompany, importance: val as Priority})}
-                                        options={[
-                                            { value: 'low', label: 'Basse' },
-                                            { value: 'medium', label: 'Moyenne' },
-                                            { value: 'high', label: 'Haute' }
-                                        ]}
-                                    />
-                                </div>
+                                {newCompany.entityType === 'partner' ? (
+                                    <div>
+                                        <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Type de partenariat</label>
+                                        <CustomSelect 
+                                            value={newCompany.partnerType || 'other'}
+                                            onChange={(val) => setNewCompany({...newCompany, partnerType: val as PartnerType})}
+                                            options={[
+                                                { value: 'consulting', label: 'Consulting' },
+                                                { value: 'technology', label: 'Technologie' },
+                                                { value: 'financial', label: 'Finance' },
+                                                { value: 'legal', label: 'Juridique' },
+                                                { value: 'marketing', label: 'Marketing' },
+                                                { value: 'other', label: 'Autre' }
+                                            ]}
+                                        />
+                                    </div>
+                                ) : (
+                                    <div>
+                                        <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Priorité</label>
+                                        <CustomSelect 
+                                            value={newCompany.importance}
+                                            onChange={(val) => setNewCompany({...newCompany, importance: val as Priority})}
+                                            options={[
+                                                { value: 'low', label: 'Basse' },
+                                                { value: 'medium', label: 'Moyenne' },
+                                                { value: 'high', label: 'Haute' }
+                                            ]}
+                                        />
+                                    </div>
+                                )}
                             </div>
                             
                             <div className="pt-4 flex justify-end gap-3 sticky bottom-0 bg-white dark:bg-slate-900 border-t border-slate-100 dark:border-slate-800 pb-2">
@@ -443,9 +634,12 @@ export const Directory: React.FC = () => {
                                 <button 
                                     type="submit" 
                                     disabled={loading}
-                                    className="px-6 py-2 text-sm font-bold text-white bg-primary hover:bg-primary/90 rounded-md disabled:opacity-50 shadow-md transition-all active:scale-95"
+                                    className={clsx(
+                                        "px-6 py-2 text-sm font-bold text-white rounded-md disabled:opacity-50 shadow-md transition-all active:scale-95",
+                                        newCompany.entityType === 'partner' ? "bg-purple-600 hover:bg-purple-700" : "bg-blue-600 hover:bg-blue-700"
+                                    )}
                                 >
-                                    {loading ? 'Création...' : 'Créer l\'entreprise'}
+                                    {loading ? 'Création...' : newCompany.entityType === 'partner' ? 'Créer le partenaire' : 'Créer le client'}
                                 </button>
                             </div>
                         </form>

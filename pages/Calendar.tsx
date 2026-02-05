@@ -11,6 +11,7 @@ import {
 } from 'lucide-react';
 import { calendarService } from '../services/calendar';
 import { gmailService } from '../services/gmail';
+import { ScheduleMeetingModal } from '../components/ScheduleMeetingModal';
 import { cn } from '../lib/utils';
 
 interface CalendarEvent {
@@ -38,6 +39,7 @@ export const Calendar: React.FC = () => {
     const [selectedEvent, setSelectedEvent] = useState<CalendarEvent | null>(null);
     const [isAuthenticated, setIsAuthenticated] = useState(false);
     const [showUpcoming, setShowUpcoming] = useState(true);
+    const [showCreateModal, setShowCreateModal] = useState(false);
 
     useEffect(() => {
         loadGmailService();
@@ -214,11 +216,11 @@ export const Calendar: React.FC = () => {
                     </p>
                 </div>
                 <button
-                    onClick={() => navigate('/company/new?action=schedule')}
+                    onClick={() => setShowCreateModal(true)}
                     className="px-4 py-2 bg-primary text-primary-foreground rounded-lg font-medium flex items-center gap-2 hover:bg-primary/90 transition-colors"
                 >
                     <Plus className="h-4 w-4" />
-                    Nouveau
+                    Nouveau RDV
                 </button>
             </div>
 
@@ -295,6 +297,18 @@ export const Calendar: React.FC = () => {
                     onClose={() => setSelectedEvent(null)} 
                 />
             )}
+
+            {/* Create Event Modal */}
+            <ScheduleMeetingModal
+                open={showCreateModal}
+                onClose={() => {
+                    setShowCreateModal(false);
+                    // Refresh events after creation
+                    if (isAuthenticated) {
+                        loadEvents();
+                    }
+                }}
+            />
         </div>
     );
 };

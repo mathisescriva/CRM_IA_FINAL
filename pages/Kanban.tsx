@@ -17,7 +17,10 @@ export const Kanban: React.FC = () => {
     const [openMenuId, setOpenMenuId] = useState<string | null>(null);
 
     const refreshData = () => {
-        companyService.getAll().then(setCompanies);
+        // Only show clients in pipeline (not partners)
+        companyService.getAll().then(data => {
+            setCompanies(data.filter(c => c.entityType !== 'partner'));
+        });
     };
 
     useEffect(() => {

@@ -200,7 +200,7 @@ const Dashboard: React.FC = () => {
                     <Section 
                         title="À faire" 
                         count={tasks.length}
-                        action={{ label: 'Tout voir', onClick: () => {} }}
+                        action={{ label: 'Tout voir', onClick: () => navigate('/tasks') }}
                     >
                         {tasks.length === 0 ? (
                             <EmptyState 

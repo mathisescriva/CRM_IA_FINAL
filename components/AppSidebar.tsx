@@ -16,7 +16,8 @@ import {
     Moon,
     Sun,
     Sparkles,
-    Calendar
+    Calendar,
+    Handshake
 } from 'lucide-react';
 import { cn, getInitials } from '../lib/utils';
 import { authService } from '../services/auth';
@@ -44,13 +45,20 @@ const NAV_STRUCTURE: NavItem[] = [
         subItems: [
             { label: 'Vue d\'ensemble', path: '/', icon: PieChart },
             { label: 'Pipeline', path: '/kanban', icon: FolderKanban },
-            { label: 'Entreprises', path: '/directory', icon: Users },
-            { label: 'Annuaire', path: '/annuaire', icon: Contact },
+        ]
+    },
+    { 
+        icon: Briefcase, 
+        label: 'Entreprises', 
+        path: '/directory',
+        subItems: [
+            { label: 'Toutes', path: '/directory', icon: Briefcase },
+            { label: 'Annuaire contacts', path: '/annuaire', icon: Contact },
         ]
     },
     { icon: Calendar, label: 'Calendrier', path: '/calendar' },
     { icon: Inbox, label: 'Inbox', path: '/inbox' },
-    { icon: Briefcase, label: 'Toolbox', path: '/toolbox' },
+    { icon: Users, label: 'Toolbox', path: '/toolbox' },
 ];
 
 interface AppSidebarProps {

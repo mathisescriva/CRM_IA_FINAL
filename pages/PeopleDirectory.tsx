@@ -1,8 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { companyService } from '../services/supabase';
-import { Contact, Company, CompanyType, Priority, Gender } from '../types';
-import { Search, Mail, Building2, Phone, Plus, X, Camera, Briefcase, Linkedin, Trash2, ChevronDown, Check, UserPlus, Loader2 } from 'lucide-react';
+import { Contact, Company, CompanyType, Priority, Gender, EntityType } from '../types';
+import { Search, Mail, Building2, Phone, Plus, X, Camera, Briefcase, Linkedin, Trash2, ChevronDown, Check, UserPlus, Loader2, Users, Handshake, Contact as ContactIcon } from 'lucide-react';
 import { getInitials } from '../lib/utils';
 import { cn } from '../lib/utils';
 
@@ -18,6 +18,7 @@ interface ContactWithCompany extends Contact {
     companyId: string;
     companyName: string;
     companyLogo?: string;
+    entityType: EntityType;
 }
 
 interface SelectOption { label: string; value: string; }
@@ -87,6 +88,7 @@ export const PeopleDirectory: React.FC = () => {
     const [companies, setCompanies] = useState<Company[]>([]);
     const [loading, setLoading] = useState(true);
     const [searchTerm, setSearchTerm] = useState('');
+    const [entityTypeFilter, setEntityTypeFilter] = useState<EntityType | 'all'>('all');
 
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [isCreatingCompany, setIsCreatingCompany] = useState(false);
@@ -110,22 +112,30 @@ export const PeopleDirectory: React.FC = () => {
                 ...contact,
                 companyId: company.id,
                 companyName: company.name,
-                companyLogo: company.logoUrl
+                companyLogo: company.logoUrl,
+                entityType: company.entityType || 'client'
             }))
         );
         allContacts.sort((a, b) => a.name.localeCompare(b.name));
         setContacts(allContacts);
         setLoading(false);
     };
+    
+    // Stats
+    const clientContactsCount = contacts.filter(c => c.entityType === 'client').length;
+    const partnerContactsCount = contacts.filter(c => c.entityType === 'partner').length;
 
     useEffect(() => { loadData(); }, []);
 
-    const filteredContacts = contacts.filter(c => 
-        c.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        c.companyName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        c.role.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        c.emails.some(e => e.toLowerCase().includes(searchTerm.toLowerCase()))
-    );
+    const filteredContacts = contacts.filter(c => {
+        // Filter by entity type
+        if (entityTypeFilter !== 'all' && c.entityType !== entityTypeFilter) return false;
+        
+        return c.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+            c.companyName.toLowerCase().includes(searchTerm.toLowerCase()) ||
+            c.role.toLowerCase().includes(searchTerm.toLowerCase()) ||
+            c.emails.some(e => e.toLowerCase().includes(searchTerm.toLowerCase()));
+    });
 
     const handleAvatarUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
@@ -238,14 +248,61 @@ export const PeopleDirectory: React.FC = () => {
         <div className="space-y-6">
             {/* Header */}
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                <div>
-                    <h1 className="text-2xl font-bold tracking-tight">Annuaire Contacts</h1>
-                    <p className="text-muted-foreground">Gérez vos contacts et relations professionnelles</p>
+                <div className="flex items-center gap-4">
+                    <div className="h-12 w-12 rounded-xl flex items-center justify-center bg-gradient-to-br from-emerald-500 to-teal-600">
+                        <ContactIcon className="h-6 w-6 text-white" />
+                    </div>
+                    <div>
+                        <h1 className="text-2xl font-bold tracking-tight">Annuaire Contacts</h1>
+                        <p className="text-muted-foreground">
+                            {clientContactsCount} contacts clients · {partnerContactsCount} contacts partenaires
+                        </p>
+                    </div>
                 </div>
                 <Button onClick={openCreateModal}>
                     <Plus className="h-4 w-4" />
                     Ajouter un contact
                 </Button>
+            </div>
+            
+            {/* Entity Type Tabs */}
+            <div className="flex items-center gap-2 p-1 bg-muted rounded-lg w-fit">
+                <button
+                    onClick={() => setEntityTypeFilter('all')}
+                    className={cn(
+                        "flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium transition-all",
+                        entityTypeFilter === 'all' 
+                            ? "bg-background text-foreground shadow-sm" 
+                            : "text-muted-foreground hover:text-foreground"
+                    )}
+                >
+                    <ContactIcon className="h-4 w-4" />
+                    Tous ({contacts.length})
+                </button>
+                <button
+                    onClick={() => setEntityTypeFilter('client')}
+                    className={cn(
+                        "flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium transition-all",
+                        entityTypeFilter === 'client' 
+                            ? "bg-background text-blue-600 shadow-sm" 
+                            : "text-muted-foreground hover:text-foreground"
+                    )}
+                >
+                    <Users className="h-4 w-4" />
+                    Clients ({clientContactsCount})
+                </button>
+                <button
+                    onClick={() => setEntityTypeFilter('partner')}
+                    className={cn(
+                        "flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium transition-all",
+                        entityTypeFilter === 'partner' 
+                            ? "bg-background text-purple-600 shadow-sm" 
+                            : "text-muted-foreground hover:text-foreground"
+                    )}
+                >
+                    <Handshake className="h-4 w-4" />
+                    Partenaires ({partnerContactsCount})
+                </button>
             </div>
 
             {/* Search & Table Card */}
@@ -328,7 +385,21 @@ export const PeopleDirectory: React.FC = () => {
                                                             <Building2 className="h-3 w-3" />
                                                         </AvatarFallback>
                                                     </Avatar>
-                                                    <span className="text-sm">{contact.companyName}</span>
+                                                    <div className="flex flex-col">
+                                                        <span className="text-sm">{contact.companyName}</span>
+                                                        <span className={cn(
+                                                            "text-[10px] font-medium flex items-center gap-1",
+                                                            contact.entityType === 'client' 
+                                                                ? "text-blue-600 dark:text-blue-400"
+                                                                : "text-purple-600 dark:text-purple-400"
+                                                        )}>
+                                                            {contact.entityType === 'client' ? (
+                                                                <><Users className="h-2.5 w-2.5" /> Client</>
+                                                            ) : (
+                                                                <><Handshake className="h-2.5 w-2.5" /> Partenaire</>
+                                                            )}
+                                                        </span>
+                                                    </div>
                                                 </div>
                                             </td>
                                             <td className="px-6 py-4">

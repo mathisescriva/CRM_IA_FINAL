@@ -2,12 +2,21 @@
  * Schedule Meeting Modal - Create calendar events
  */
 
-import React, { useState } from 'react';
-import { X, Calendar, Clock, Users, Video, MapPin, Plus, Check, AlertCircle, ExternalLink } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { X, Calendar, Clock, Users, Video, MapPin, Plus, Check, AlertCircle, ExternalLink, Search, Building2 } from 'lucide-react';
 import { calendarService } from '../services/calendar';
 import { gmailService } from '../services/gmail';
-import { cn } from '../lib/utils';
+import { companyService } from '../services/supabase';
+import { cn, getInitials } from '../lib/utils';
 import { Company, Contact } from '../types';
+
+interface SelectedAttendee {
+    id: string;
+    name: string;
+    email: string;
+    companyName?: string;
+    avatarUrl?: string;
+}
 
 interface ScheduleMeetingModalProps {
     open: boolean;
@@ -29,19 +38,90 @@ export const ScheduleMeetingModal: React.FC<ScheduleMeetingModalProps> = ({
         description: '',
         date: new Date().toISOString().split('T')[0],
         startTime: '09:00',
-        duration: 60, // minutes
+        duration: 60,
         location: '',
-        attendees: defaultAttendees,
         addMeet: true
     });
-    const [newAttendee, setNewAttendee] = useState('');
+    
+    // Contacts autocomplete
+    const [allContacts, setAllContacts] = useState<SelectedAttendee[]>([]);
+    const [selectedAttendees, setSelectedAttendees] = useState<SelectedAttendee[]>([]);
+    const [searchQuery, setSearchQuery] = useState('');
+    const [showSuggestions, setShowSuggestions] = useState(false);
+    const [filteredContacts, setFilteredContacts] = useState<SelectedAttendee[]>([]);
 
-    // Check auth on mount and when modal opens
-    React.useEffect(() => {
+    // Load contacts on mount
+    useEffect(() => {
         if (open) {
+            loadContacts();
             checkAuth();
+            
+            // Reset form when opening
+            setForm({
+                title: company ? `Rendez-vous avec ${company.name}` : '',
+                description: '',
+                date: new Date().toISOString().split('T')[0],
+                startTime: '09:00',
+                duration: 60,
+                location: '',
+                addMeet: true
+            });
+            setSelectedAttendees([]);
+            setSearchQuery('');
         }
-    }, [open]);
+    }, [open, company]);
+
+    // Filter contacts based on search
+    useEffect(() => {
+        if (searchQuery.trim() === '') {
+            setFilteredContacts(allContacts.filter(c => 
+                !selectedAttendees.some(s => s.email === c.email)
+            ));
+        } else {
+            const query = searchQuery.toLowerCase();
+            setFilteredContacts(allContacts.filter(c => 
+                !selectedAttendees.some(s => s.email === c.email) &&
+                (c.name.toLowerCase().includes(query) ||
+                 c.email.toLowerCase().includes(query) ||
+                 c.companyName?.toLowerCase().includes(query))
+            ));
+        }
+    }, [searchQuery, allContacts, selectedAttendees]);
+
+    const loadContacts = async () => {
+        try {
+            const companies = await companyService.getAll();
+            const contacts: SelectedAttendee[] = [];
+            
+            companies.forEach(comp => {
+                comp.contacts.forEach(contact => {
+                    const email = contact.emails?.[0];
+                    if (email) {
+                        contacts.push({
+                            id: contact.id,
+                            name: contact.name,
+                            email: email,
+                            companyName: comp.name,
+                            avatarUrl: contact.avatarUrl
+                        });
+                    }
+                });
+            });
+            
+            setAllContacts(contacts);
+            setFilteredContacts(contacts);
+            
+            // Pre-select contacts from company if provided
+            if (company) {
+                const companyAttendees = contacts.filter(c => 
+                    company.contacts.some(cc => cc.emails?.[0] === c.email)
+                );
+                // Don't auto-select, just make them available
+            }
+        } catch (error) {
+            console.error('Error loading contacts:', error);
+        }
+    };
 
     const checkAuth = async () => {
         await gmailService.load();
@@ -57,21 +137,16 @@ export const ScheduleMeetingModal: React.FC<ScheduleMeetingModalProps> = ({
         }
     };
 
-    const handleAddAttendee = () => {
-        if (newAttendee && !form.attendees.includes(newAttendee)) {
-            setForm(prev => ({
-                ...prev,
-                attendees: [...prev.attendees, newAttendee]
-            }));
-            setNewAttendee('');
+    const selectAttendee = (contact: SelectedAttendee) => {
+        if (!selectedAttendees.some(a => a.email === contact.email)) {
+            setSelectedAttendees(prev => [...prev, contact]);
         }
+        setSearchQuery('');
+        setShowSuggestions(false);
     };
 
-    const handleRemoveAttendee = (email: string) => {
-        setForm(prev => ({
-            ...prev,
-            attendees: prev.attendees.filter(e => e !== email)
-        }));
+    const removeAttendee = (email: string) => {
+        setSelectedAttendees(prev => prev.filter(a => a.email !== email));
     };
 
     const handleSubmit = async (e: React.FormEvent) => {
@@ -91,7 +166,7 @@ export const ScheduleMeetingModal: React.FC<ScheduleMeetingModalProps> = ({
                 description: form.description,
                 start: { dateTime: startDateTime.toISOString() },
                 end: { dateTime: endDateTime.toISOString() },
-                attendees: form.attendees.map(email => ({ email })),
+                attendees: selectedAttendees.map(a => ({ email: a.email })),
                 location: form.location,
                 ...(form.addMeet && {
                     conferenceData: {
@@ -103,19 +178,21 @@ export const ScheduleMeetingModal: React.FC<ScheduleMeetingModalProps> = ({
                 })
             };
 
-            await calendarService.createEvent(event);
+            const createdEvent = await calendarService.createEvent(event);
             
-            // Reset form
-            setForm({
-                title: '',
-                description: '',
-                date: new Date().toISOString().split('T')[0],
-                startTime: '09:00',
-                duration: 60,
-                location: '',
-                attendees: [],
-                addMeet: true
-            });
+            // Show success message
+            const hasAttendees = selectedAttendees.length > 0;
+            const hasMeet = form.addMeet && createdEvent.hangoutLink;
+            
+            let successMessage = 'Événement créé avec succès !';
+            if (hasAttendees) {
+                successMessage += ` Invitations envoyées à ${selectedAttendees.length} participant${selectedAttendees.length > 1 ? 's' : ''}.`;
+            }
+            if (hasMeet) {
+                successMessage += ' Lien Google Meet généré.';
+            }
+            
+            alert(successMessage);
             onClose();
         } catch (error) {
             console.error('Error creating event:', error);
@@ -262,72 +339,134 @@ export const ScheduleMeetingModal: React.FC<ScheduleMeetingModalProps> = ({
                                     <div className="mb-3">
                                         <p className="text-xs text-muted-foreground mb-2">Ajouter depuis {company?.name}</p>
                                         <div className="flex flex-wrap gap-2">
-                                            {companyContacts.map(contact => (
-                                                <button
-                                                    key={contact.id}
-                                                    type="button"
-                                                    onClick={() => {
-                                                        const email = contact.emails[0];
-                                                        if (email && !form.attendees.includes(email)) {
-                                                            setForm(prev => ({
-                                                                ...prev,
-                                                                attendees: [...prev.attendees, email]
-                                                            }));
-                                                        }
-                                                    }}
-                                                    disabled={form.attendees.includes(contact.emails[0])}
-                                                    className={cn(
-                                                        "px-3 py-1.5 rounded-lg text-xs font-medium transition-all",
-                                                        form.attendees.includes(contact.emails[0])
-                                                            ? "bg-primary/10 text-primary cursor-default"
-                                                            : "border border-border hover:bg-muted"
-                                                    )}
-                                                >
-                                                    {form.attendees.includes(contact.emails[0]) && (
-                                                        <Check className="h-3 w-3 inline mr-1" />
-                                                    )}
-                                                    {contact.name}
-                                                </button>
-                                            ))}
+                                            {companyContacts.map(contact => {
+                                                const email = contact.emails[0];
+                                                const isSelected = selectedAttendees.some(a => a.email === email);
+                                                return (
+                                                    <button
+                                                        key={contact.id}
+                                                        type="button"
+                                                        onClick={() => {
+                                                            if (email && !isSelected) {
+                                                                selectAttendee({
+                                                                    id: contact.id,
+                                                                    name: contact.name,
+                                                                    email: email,
+                                                                    companyName: company?.name,
+                                                                    avatarUrl: contact.avatarUrl
+                                                                });
+                                                            }
+                                                        }}
+                                                        disabled={isSelected}
+                                                        className={cn(
+                                                            "px-3 py-1.5 rounded-lg text-xs font-medium transition-all",
+                                                            isSelected
+                                                                ? "bg-primary/10 text-primary cursor-default"
+                                                                : "border border-border hover:bg-muted"
+                                                        )}
+                                                    >
+                                                        {isSelected && (
+                                                            <Check className="h-3 w-3 inline mr-1" />
+                                                        )}
+                                                        {contact.name}
+                                                    </button>
+                                                );
+                                            })}
                                         </div>
                                     </div>
                                 )}
 
-                                {/* Manual add */}
-                                <div className="flex gap-2 mb-3">
-                                    <input
-                                        type="email"
-                                        value={newAttendee}
-                                        onChange={e => setNewAttendee(e.target.value)}
-                                        onKeyPress={e => e.key === 'Enter' && (e.preventDefault(), handleAddAttendee())}
-                                        placeholder="email@exemple.com"
-                                        className="flex-1 px-3 py-2 rounded-lg border border-border bg-background text-sm focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/20"
-                                    />
-                                    <button
-                                        type="button"
-                                        onClick={handleAddAttendee}
-                                        className="px-3 py-2 bg-muted hover:bg-muted/80 rounded-lg text-sm font-medium transition-colors"
-                                    >
-                                        <Plus className="h-4 w-4" />
-                                    </button>
+                                {/* Search contacts */}
+                                <div className="relative mb-3">
+                                    <div className="relative">
+                                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                                        <input
+                                            type="text"
+                                            value={searchQuery}
+                                            onChange={e => setSearchQuery(e.target.value)}
+                                            onFocus={() => setShowSuggestions(true)}
+                                            onBlur={() => setTimeout(() => setShowSuggestions(false), 200)}
+                                            placeholder="Rechercher un contact par nom..."
+                                            className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-border bg-background text-sm focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/20 transition-all"
+                                        />
+                                    </div>
+                                    
+                                    {/* Suggestions dropdown */}
+                                    {showSuggestions && filteredContacts.length > 0 && (
+                                        <div className="absolute z-50 w-full mt-1 bg-popover border border-border rounded-xl shadow-lg max-h-60 overflow-y-auto">
+                                            {filteredContacts.slice(0, 8).map(contact => (
+                                                <button
+                                                    key={contact.id}
+                                                    type="button"
+                                                    onMouseDown={(e) => {
+                                                        e.preventDefault();
+                                                        selectAttendee(contact);
+                                                    }}
+                                                    className="w-full flex items-center gap-3 px-4 py-3 hover:bg-muted transition-colors text-left"
+                                                >
+                                                    <div className="h-9 w-9 rounded-full bg-primary/10 flex items-center justify-center shrink-0 overflow-hidden">
+                                                        {contact.avatarUrl ? (
+                                                            <img src={contact.avatarUrl} alt="" className="h-full w-full object-cover" />
+                                                        ) : (
+                                                            <span className="text-xs font-bold text-primary">{getInitials(contact.name)}</span>
+                                                        )}
+                                                    </div>
+                                                    <div className="flex-1 min-w-0">
+                                                        <p className="text-sm font-medium truncate">{contact.name}</p>
+                                                        <p className="text-xs text-muted-foreground truncate flex items-center gap-1">
+                                                            {contact.companyName && (
+                                                                <>
+                                                                    <Building2 className="h-3 w-3" />
+                                                                    {contact.companyName}
+                                                                    <span className="mx-1">•</span>
+                                                                </>
+                                                            )}
+                                                            {contact.email}
+                                                        </p>
+                                                    </div>
+                                                </button>
+                                            ))}
+                                        </div>
+                                    )}
+                                    
+                                    {showSuggestions && searchQuery && filteredContacts.length === 0 && (
+                                        <div className="absolute z-50 w-full mt-1 bg-popover border border-border rounded-xl shadow-lg p-4 text-center text-sm text-muted-foreground">
+                                            Aucun contact trouvé
+                                        </div>
+                                    )}
                                 </div>
 
-                                {/* List */}
-                                {form.attendees.length > 0 && (
+                                {/* Selected attendees */}
+                                {selectedAttendees.length > 0 && (
                                     <div className="space-y-2">
-                                        {form.attendees.map(email => (
-                                            <div key={email} className="flex items-center gap-2 px-3 py-2 rounded-lg bg-muted/50">
-                                                <Users className="h-4 w-4 text-muted-foreground" />
-                                                <span className="text-sm flex-1">{email}</span>
+                                        {selectedAttendees.map(attendee => (
+                                            <div key={attendee.email} className="flex items-center gap-3 px-3 py-2 rounded-lg bg-muted/50">
+                                                <div className="h-8 w-8 rounded-full bg-primary/10 flex items-center justify-center shrink-0 overflow-hidden">
+                                                    {attendee.avatarUrl ? (
+                                                        <img src={attendee.avatarUrl} alt="" className="h-full w-full object-cover" />
+                                                    ) : (
+                                                        <span className="text-[10px] font-bold text-primary">{getInitials(attendee.name)}</span>
+                                                    )}
+                                                </div>
+                                                <div className="flex-1 min-w-0">
+                                                    <p className="text-sm font-medium truncate">{attendee.name}</p>
+                                                    <p className="text-xs text-muted-foreground truncate">
+                                                        {attendee.companyName && `${attendee.companyName} • `}{attendee.email}
+                                                    </p>
+                                                </div>
                                                 <button
                                                     type="button"
-                                                    onClick={() => handleRemoveAttendee(email)}
-                                                    className="p-1 hover:bg-background rounded"
+                                                    onClick={() => removeAttendee(attendee.email)}
+                                                    className="p-1.5 hover:bg-background rounded-lg transition-colors"
                                                 >
-                                                    <X className="h-3 w-3" />
+                                                    <X className="h-4 w-4" />
                                                 </button>
                                             </div>
                                         ))}
+                                        <p className="text-xs text-muted-foreground flex items-center gap-1.5 pt-1">
+                                            <Check className="h-3 w-3 text-green-500" />
+                                            Une invitation sera envoyée à {selectedAttendees.length > 1 ? 'ces participants' : 'ce participant'}
+                                        </p>
                                     </div>
                                 )}
                             </div>

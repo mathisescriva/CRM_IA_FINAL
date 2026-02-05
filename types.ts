@@ -2,6 +2,8 @@
 import React from 'react';
 
 export type CompanyType = 'PME' | 'GE/ETI' | 'Public Services';
+export type EntityType = 'client' | 'partner';
+export type PartnerType = 'technology' | 'consulting' | 'financial' | 'legal' | 'marketing' | 'other';
 export type Priority = 'high' | 'medium' | 'low';
 export type PipelineStage = 'entry_point' | 'exchange' | 'proposal' | 'validation' | 'client_success';
 export type Gender = 'male' | 'female' | 'other' | 'not_specified';
@@ -73,14 +75,23 @@ export interface Company {
   name: string;
   logoUrl?: string;
   type: CompanyType;
+  entityType: EntityType; // 'client' or 'partner'
   website?: string;
   lastContactDate: string;
   importance: Priority;
+  // Client-specific fields
   pipelineStage: PipelineStage;
-  contacts: Contact[];
   checklist: ChecklistItem[];
+  // Partner-specific fields
+  partnerType?: PartnerType;
+  partnerSince?: string;
+  partnerAgreement?: string; // URL to partnership agreement
+  commissionRate?: number;
+  referralsCount?: number;
+  // Common fields
+  contacts: Contact[];
   activities: Activity[];
-  documents: CompanyDocument[]; // Google Drive links
+  documents: CompanyDocument[];
   team: TeamMember[]; // Internal Lexia Team
   generalComment?: string;
   createdAt: string;

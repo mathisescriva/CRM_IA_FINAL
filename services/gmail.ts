@@ -44,10 +44,10 @@ class GmailService {
     }
 
     private getCredentials() {
-        return {
-            clientId: (import.meta as any).env?.VITE_GOOGLE_CLIENT_ID || '',
-            apiKey: (import.meta as any).env?.VITE_GOOGLE_API_KEY || ''
-        };
+        const clientId = (import.meta as any).env?.VITE_GOOGLE_CLIENT_ID || '';
+        const apiKey = (import.meta as any).env?.VITE_GOOGLE_API_KEY || '';
+        console.log("[Gmail] Credentials loaded - clientId:", clientId ? clientId.substring(0, 20) + '...' : 'EMPTY', "apiKey:", apiKey ? apiKey.substring(0, 10) + '...' : 'EMPTY');
+        return { clientId, apiKey };
     }
 
     async load(): Promise<void> {
@@ -59,18 +59,24 @@ class GmailService {
                     clearInterval(checkScripts);
                     gapi.load('client', async () => {
                         try {
-                            const { apiKey } = this.getCredentials();
+                            console.log("[Gmail] Initializing GAPI without API key (using OAuth only)");
+                            
+                            // Initialize without API key - we use OAuth tokens instead
                             await gapi.client.init({ 
-                                apiKey: apiKey, 
                                 discoveryDocs: DISCOVERY_DOCS 
                             });
+                            console.log("[Gmail] GAPI init success");
                             
                             this.initGis();
                             this.checkStoredToken();
+                            console.log("[Gmail] After init, isAuthenticated:", this.isAuthenticated);
                             resolve();
                         } catch (err: any) {
-                            console.error("GAPI init error:", err);
+                            console.error("[Gmail] GAPI init error:", err);
                             this.initError = err?.result?.error?.message || "Erreur d'initialisation Google";
+                            // Continue anyway - try to init GIS for auth
+                            this.initGis();
+                            this.checkStoredToken();
                             resolve(); 
                         }
                     });
@@ -82,7 +88,15 @@ class GmailService {
     private initGis() {
         const { clientId } = this.getCredentials();
         const google = (window as any).google;
-        if (!clientId || !google?.accounts?.oauth2) return;
+        console.log("[Gmail] initGis - clientId exists:", !!clientId, "google.accounts exists:", !!google?.accounts?.oauth2);
+        if (!clientId) {
+            console.error("[Gmail] No clientId found! Check VITE_GOOGLE_CLIENT_ID in .env");
+            return;
+        }
+        if (!google?.accounts?.oauth2) {
+            console.error("[Gmail] Google Identity Services not loaded!");
+            return;
+        }
 
         this.tokenClient = google.accounts.oauth2.initTokenClient({
             client_id: clientId,
@@ -104,13 +118,17 @@ class GmailService {
 
     private checkStoredToken() {
         const stored = localStorage.getItem(STORAGE_TOKEN_KEY);
+        console.log("[Gmail] checkStoredToken - stored:", !!stored);
         if (stored) {
             const { access_token, expiry } = JSON.parse(stored);
-            if (Date.now() < expiry - 60000) {
+            const isValid = Date.now() < expiry - 60000;
+            console.log("[Gmail] Token valid:", isValid, "expiry:", new Date(expiry).toISOString());
+            if (isValid) {
                 const gapi = (window as any).gapi;
                 if (gapi?.client) {
                     gapi.client.setToken({ access_token });
                     this.isAuthenticated = true;
+                    console.log("[Gmail] isAuthenticated set to true");
                 }
             }
         }

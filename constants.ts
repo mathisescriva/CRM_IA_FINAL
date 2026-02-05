@@ -100,6 +100,7 @@ export const MOCK_COMPANIES: Company[] = [
         id: 'omnes-education',
         name: 'OMNES Education',
         type: 'GE/ETI',
+        entityType: 'client',
         importance: 'high',
         pipelineStage: 'proposal',
         lastContactDate: '2026-01-25T16:30:00Z',
@@ -148,6 +149,7 @@ export const MOCK_COMPANIES: Company[] = [
         id: 'vetoptim',
         name: 'Vetoptim',
         type: 'PME',
+        entityType: 'client',
         importance: 'high',
         pipelineStage: 'validation',
         lastContactDate: '2026-01-12T09:00:00Z',
@@ -165,6 +167,15 @@ export const MOCK_COMPANIES: Company[] = [
                 phone: '+33 6 12 34 56 78',
                 isMainContact: true,
                 gender: 'female'
+            },
+            { 
+                id: 'contact-vet-2', 
+                name: 'Tristan Dubois', 
+                emails: ['tristan.dubois@vetoptim.fr', 't.dubois@vetoptim.fr'], 
+                role: 'Directeur Technique', 
+                phone: '+33 6 98 76 54 32',
+                isMainContact: false,
+                gender: 'male'
             }
         ],
         checklist: [
@@ -185,6 +196,7 @@ export const MOCK_COMPANIES: Company[] = [
         id: 'gruau',
         name: 'Gruau',
         type: 'GE/ETI',
+        entityType: 'client',
         importance: 'medium',
         pipelineStage: 'exchange',
         lastContactDate: '2026-01-30T14:00:00Z',
@@ -224,5 +236,107 @@ export const MOCK_COMPANIES: Company[] = [
         documents: [],
         createdAt: '2026-01-28T00:00:00Z',
         generalComment: 'Carrossier industriel leader en France. Intéressé par la digitalisation de leur gestion client. Premier RDV à planifier.'
+    },
+    // PARTNERS
+    {
+        id: 'partner-accenture',
+        name: 'Accenture',
+        type: 'GE/ETI',
+        entityType: 'partner',
+        partnerType: 'consulting',
+        partnerSince: '2025-06-01',
+        commissionRate: 15,
+        referralsCount: 3,
+        importance: 'high',
+        pipelineStage: 'client_success',
+        lastContactDate: '2026-01-28T10:00:00Z',
+        website: 'accenture.com',
+        logoUrl: 'https://logo.clearbit.com/accenture.com',
+        team: [
+            { id: 'tm-acc-1', name: 'Martial', role: 'Partner Manager', avatarUrl: '/martial.jpg', email: 'martial@lexia.fr' }
+        ],
+        contacts: [
+            { 
+                id: 'contact-acc-1', 
+                name: 'Thomas Lefebvre', 
+                emails: ['thomas.lefebvre@accenture.com'], 
+                role: 'Senior Manager - CRM Practice', 
+                phone: '+33 1 53 23 XX XX',
+                isMainContact: true,
+                gender: 'male'
+            }
+        ],
+        checklist: [],
+        activities: [
+            { id: 'acc-1', type: 'meeting', title: 'Quarterly Partner Review', description: 'Revue trimestrielle du partenariat', date: '2026-01-15T14:00:00Z', user: 'Martial', syncStatus: 'synced' }
+        ],
+        documents: [
+            { id: 'doc-acc-1', name: 'Partnership_Agreement_2025.pdf', type: 'pdf', url: '#', addedBy: 'Martial', createdAt: '2025-06-01T00:00:00Z' }
+        ],
+        createdAt: '2025-06-01T00:00:00Z',
+        generalComment: 'Partenaire stratégique consulting. 3 deals apportés depuis le début du partenariat. Excellent relationnel.'
+    },
+    {
+        id: 'partner-stripe',
+        name: 'Stripe',
+        type: 'GE/ETI',
+        entityType: 'partner',
+        partnerType: 'technology',
+        partnerSince: '2025-09-15',
+        commissionRate: 10,
+        referralsCount: 1,
+        importance: 'medium',
+        pipelineStage: 'client_success',
+        lastContactDate: '2026-01-20T09:00:00Z',
+        website: 'stripe.com',
+        logoUrl: 'https://logo.clearbit.com/stripe.com',
+        team: [
+            { id: 'tm-str-1', name: 'Hugo', role: 'Integration Lead', avatarUrl: '/hugo.jpg', email: 'hugo@lexia.fr' }
+        ],
+        contacts: [
+            { 
+                id: 'contact-str-1', 
+                name: 'Julie Chen', 
+                emails: ['julie.chen@stripe.com'], 
+                role: 'Partnership Manager France', 
+                isMainContact: true,
+                gender: 'female'
+            }
+        ],
+        checklist: [],
+        activities: [
+            { id: 'str-1', type: 'email', direction: 'inbound', title: 'Nouvelle intégration disponible', description: 'Stripe Billing v3 disponible', date: '2026-01-20T09:00:00Z', user: 'Hugo', syncStatus: 'synced' }
+        ],
+        documents: [],
+        createdAt: '2025-09-15T00:00:00Z',
+        generalComment: 'Partenaire technologique - Intégration paiement. Co-marketing prévu Q2 2026.'
+    },
+    {
+        id: 'partner-avocat',
+        name: 'Cabinet Dupont & Associés',
+        type: 'PME',
+        entityType: 'partner',
+        partnerType: 'legal',
+        partnerSince: '2025-03-01',
+        importance: 'low',
+        pipelineStage: 'client_success',
+        lastContactDate: '2026-01-05T11:00:00Z',
+        team: [],
+        contacts: [
+            { 
+                id: 'contact-avo-1', 
+                name: 'Me. François Dupont', 
+                emails: ['f.dupont@dupont-avocats.fr'], 
+                role: 'Avocat Associé', 
+                phone: '+33 1 42 XX XX XX',
+                isMainContact: true,
+                gender: 'male'
+            }
+        ],
+        checklist: [],
+        activities: [],
+        documents: [],
+        createdAt: '2025-03-01T00:00:00Z',
+        generalComment: 'Cabinet juridique partenaire pour nos contrats et questions légales.'
     }
 ];

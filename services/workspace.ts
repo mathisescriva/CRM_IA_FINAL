@@ -14,7 +14,7 @@ export interface Task {
     description?: string;
     companyId?: string;
     companyName?: string;
-    assignedTo: string; // user id
+    assignedTo: string[]; // array of user ids (contributors)
     assignedBy: string;
     dueDate?: string; // Optional - peut être undefined pour "aucune échéance"
     priority: 'low' | 'medium' | 'high';
@@ -77,7 +77,7 @@ function initDemoData() {
                 title: 'Envoyer proposition commerciale',
                 companyId: 'omnes-education',
                 companyName: 'OMNES Education',
-                assignedTo: 'mathis',
+                assignedTo: ['mathis'],
                 assignedBy: 'martial',
                 dueDate: formatDate(today),
                 priority: 'high',
@@ -89,7 +89,7 @@ function initDemoData() {
                 title: 'Appel de suivi contrat',
                 companyId: 'vetoptim',
                 companyName: 'Vetoptim',
-                assignedTo: 'martial',
+                assignedTo: ['martial', 'mathis'],
                 assignedBy: 'martial',
                 dueDate: formatDate(new Date(today.getTime() + 86400000)),
                 priority: 'high',
@@ -101,7 +101,7 @@ function initDemoData() {
                 title: 'Préparer démo produit',
                 companyId: 'gruau',
                 companyName: 'Gruau',
-                assignedTo: 'hugo',
+                assignedTo: ['hugo', 'mathis'],
                 assignedBy: 'mathis',
                 dueDate: formatDate(new Date(today.getTime() + 172800000)),
                 priority: 'medium',
@@ -228,20 +228,84 @@ function initDemoData() {
     }
 }
 
+// Migrate old tasks format (string assignedTo -> array)
+function migrateTasks() {
+    const data = localStorage.getItem(TASKS_KEY);
+    if (!data) return;
+    
+    try {
+        const tasks = JSON.parse(data);
+        let needsMigration = false;
+        
+        // Check if any task has string assignedTo
+        const migratedTasks = tasks.map((task: any) => {
+            if (typeof task.assignedTo === 'string') {
+                needsMigration = true;
+                return { ...task, assignedTo: [task.assignedTo] };
+            }
+            return task;
+        });
+        
+        if (needsMigration) {
+            // Also deduplicate tasks that were created by the old system
+            // (same title created at similar times are likely duplicates)
+            const deduped: any[] = [];
+            const seen = new Set<string>();
+            
+            for (const task of migratedTasks) {
+                // Create a key based on title and approximate creation time (within 1 minute)
+                const timeKey = Math.floor(new Date(task.createdAt).getTime() / 60000);
+                const key = `${task.title}-${task.companyId || ''}-${timeKey}`;
+                
+                if (seen.has(key)) {
+                    // Merge assignees into existing task
+                    const existing = deduped.find(t => {
+                        const tTimeKey = Math.floor(new Date(t.createdAt).getTime() / 60000);
+                        return `${t.title}-${t.companyId || ''}-${tTimeKey}` === key;
+                    });
+                    if (existing) {
+                        task.assignedTo.forEach((id: string) => {
+                            if (!existing.assignedTo.includes(id)) {
+                                existing.assignedTo.push(id);
+                            }
+                        });
+                    }
+                } else {
+                    seen.add(key);
+                    deduped.push(task);
+                }
+            }
+            
+            localStorage.setItem(TASKS_KEY, JSON.stringify(deduped));
+            console.log('Tasks migrated to new format');
+        }
+    } catch (e) {
+        console.error('Failed to migrate tasks:', e);
+    }
+}
+
 // Initialize on load
 initDemoData();
+migrateTasks();
 
 class WorkspaceService {
     // Tasks
     getTasks(): Task[] {
         const data = localStorage.getItem(TASKS_KEY);
-        return data ? JSON.parse(data) : [];
+        if (!data) return [];
+        
+        // Parse and ensure all tasks have array assignedTo (runtime safety)
+        const tasks = JSON.parse(data);
+        return tasks.map((task: any) => ({
+            ...task,
+            assignedTo: Array.isArray(task.assignedTo) ? task.assignedTo : [task.assignedTo]
+        }));
     }
 
     getMyTasks(): Task[] {
         const user = authService.getCurrentUser();
         if (!user) return [];
-        return this.getTasks().filter(t => t.assignedTo === user.id && t.status !== 'completed');
+        return this.getTasks().filter(t => t.assignedTo.includes(user.id) && t.status !== 'completed');
     }
 
     getTasksByCompany(companyId: string): Task[] {
@@ -258,16 +322,18 @@ class WorkspaceService {
         tasks.unshift(newTask);
         localStorage.setItem(TASKS_KEY, JSON.stringify(tasks));
         
-        // Create notification for assignee
-        if (task.assignedTo !== task.assignedBy) {
-            this.addNotification({
-                userId: task.assignedTo,
-                type: 'task_assigned',
-                title: 'Nouvelle tâche assignée',
-                message: `${this.getUserName(task.assignedBy)} vous a assigné: ${task.title}`,
-                link: task.companyId ? `/company/${task.companyId}` : undefined
-            });
-        }
+        // Create notification for each assignee
+        task.assignedTo.forEach(userId => {
+            if (userId !== task.assignedBy) {
+                this.addNotification({
+                    userId: userId,
+                    type: 'task_assigned',
+                    title: 'Nouvelle tâche assignée',
+                    message: `${this.getUserName(task.assignedBy)} vous a assigné: ${task.title}`,
+                    link: task.companyId ? `/company/${task.companyId}` : undefined
+                });
+            }
+        });
         
         // Log activity
         this.logActivity({
@@ -296,7 +362,27 @@ class WorkspaceService {
                     targetName: tasks[index].title
                 });
             }
+            
+            window.dispatchEvent(new CustomEvent('tasks-update'));
         }
+    }
+
+    deleteTask(id: string): void {
+        const tasks = this.getTasks();
+        const task = tasks.find(t => t.id === id);
+        const newTasks = tasks.filter(t => t.id !== id);
+        localStorage.setItem(TASKS_KEY, JSON.stringify(newTasks));
+        
+        if (task) {
+            this.logActivity({
+                action: 'completed',
+                targetType: 'task',
+                targetId: id,
+                targetName: `Supprimé: ${task.title}`
+            });
+        }
+        
+        window.dispatchEvent(new CustomEvent('tasks-update'));
     }
 
     // Team Activity
@@ -436,10 +522,12 @@ class WorkspaceService {
         return LEXIA_TEAM;
     }
 
-    // Urgent clients (no contact > 14 days)
+    // Urgent clients (no contact > 14 days) - only clients, not partners
     async getUrgentClients(): Promise<Company[]> {
         const companies = await companyService.getAll();
         return companies.filter(c => {
+            // Only clients, not partners
+            if (c.entityType === 'partner') return false;
             const daysSince = Math.floor((Date.now() - new Date(c.lastContactDate).getTime()) / (1000 * 60 * 60 * 24));
             return daysSince > 14;
         }).sort((a, b) => new Date(a.lastContactDate).getTime() - new Date(b.lastContactDate).getTime());

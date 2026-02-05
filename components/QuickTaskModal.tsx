@@ -76,19 +76,17 @@ export const QuickTaskModal: React.FC<QuickTaskModalProps> = ({
         setLoading(true);
         const company = companies.find(c => c.id === form.companyId);
         
-        // Créer une tâche pour chaque personne assignée
-        form.assignedTo.forEach(assigneeId => {
-            workspaceService.addTask({
-                title: form.title,
-                description: form.description,
-                companyId: form.companyId || undefined,
-                companyName: company?.name,
-                assignedTo: assigneeId,
-                assignedBy: currentUser.id,
-                dueDate: form.dueDate ? new Date(form.dueDate).toISOString() : undefined,
-                priority: form.priority,
-                status: 'pending'
-            });
+        // Créer une seule tâche partagée avec tous les contributeurs
+        workspaceService.addTask({
+            title: form.title,
+            description: form.description,
+            companyId: form.companyId || undefined,
+            companyName: company?.name,
+            assignedTo: form.assignedTo,
+            assignedBy: currentUser.id,
+            dueDate: form.dueDate ? new Date(form.dueDate).toISOString() : undefined,
+            priority: form.priority,
+            status: 'pending'
         });
 
         setLoading(false);
