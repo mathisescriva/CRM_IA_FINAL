@@ -48,9 +48,9 @@ export const Settings: React.FC = () => {
             setIsGoogleAuth(gmailService.isAuthenticated);
             setInitError(gmailService.initError);
             
-            if (window.aistudio?.hasSelectedApiKey) {
+            if ((window as any).aistudio?.hasSelectedApiKey) {
                 try {
-                    const hasKey = await window.aistudio.hasSelectedApiKey();
+                    const hasKey = await (window as any).aistudio.hasSelectedApiKey();
                     setHasAiKey(hasKey);
                 } catch (e) {
                     setHasAiKey(false);

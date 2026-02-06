@@ -110,7 +110,7 @@ export const Directory: React.FC = () => {
     const logoInputRef = useRef<HTMLInputElement>(null);
     
     // Stats
-    const clientsCount = companies.filter(c => c.entityType === 'client').length;
+    const clientsCount = companies.filter(c => (c.entityType || 'client') === 'client').length;
     const partnersCount = companies.filter(c => c.entityType === 'partner').length;
 
     const refreshCompanies = async () => {
@@ -134,11 +134,13 @@ export const Directory: React.FC = () => {
     }, [location.state]);
 
     const filteredCompanies = companies.filter(c => {
-        // Filter by entity type
-        if (entityTypeFilter !== 'all' && c.entityType !== entityTypeFilter) return false;
+        // Filter by entity type (default to 'client' if not set)
+        const companyEntityType = c.entityType || 'client';
+        if (entityTypeFilter !== 'all' && companyEntityType !== entityTypeFilter) return false;
         
-        const matchesSearch = c.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                              c.type.toLowerCase().includes(searchTerm.toLowerCase());
+        const matchesSearch = !searchTerm || 
+            c.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+            (c.type || '').toLowerCase().includes(searchTerm.toLowerCase());
         const matchesType = typeFilter === 'all' || c.type === typeFilter;
         const matchesPriority = priorityFilter === 'all' || c.importance === priorityFilter;
         return matchesSearch && matchesType && matchesPriority;
@@ -272,7 +274,7 @@ export const Directory: React.FC = () => {
 
             {/* Filters Panel */}
             {showFilters && (
-                <div className="p-4 bg-slate-50 border border-slate-200 rounded-lg grid grid-cols-1 sm:grid-cols-3 gap-4 dark:bg-slate-900 dark:border-slate-800 animate-in slide-in-from-top-2 duration-200">
+                <div className="p-4 bg-slate-50 border border-slate-200 rounded-lg grid grid-cols-1 sm:grid-cols-3 gap-4 dark:bg-slate-900 dark:border-slate-800 animate-in slide-in-from-top-2 duration-200 overflow-visible">
                     <div>
                         <label className="block text-xs font-medium text-slate-500 mb-1 dark:text-slate-400">Type d'entreprise</label>
                         <CustomSelect 

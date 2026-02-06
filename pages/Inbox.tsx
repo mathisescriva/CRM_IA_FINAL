@@ -167,6 +167,23 @@ export const Inbox: React.FC = () => {
         }
     }, [location.state]);
 
+    // Listen for real-time draft updates from Lexia AI
+    useEffect(() => {
+        const handleDraftUpdate = (e: Event) => {
+            const detail = (e as CustomEvent).detail;
+            if (detail) {
+                setComposeForm(prev => ({
+                    to: detail.to ?? prev.to,
+                    subject: detail.subject ?? prev.subject,
+                    body: detail.body ?? prev.body
+                }));
+                setShowCompose(true);
+            }
+        };
+        window.addEventListener('lexia-draft-update', handleDraftUpdate);
+        return () => window.removeEventListener('lexia-draft-update', handleDraftUpdate);
+    }, []);
+
     const loadMessages = async (query = '', providedContacts?: any[]) => {
         setLoading(true);
         try {

@@ -2,16 +2,12 @@ import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { authService } from '../services/auth';
 import { isSupabaseConfigured } from '../services/supabase';
-import { Lock, Mail, Loader2, ArrowRight, UserPlus, Database, Sparkles } from 'lucide-react';
+import { Lock, Mail, Loader2, ArrowRight, UserPlus, Database, ChevronRight } from 'lucide-react';
 import { Button } from '../components/ui/Button';
 import { Input } from '../components/ui/Input';
 import { Label } from '../components/ui/Label';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/Card';
 import { Badge } from '../components/ui/Badge';
-import { Separator } from '../components/ui/Separator';
 
-
-// Team photos data
 const teamPhotos = [
     { src: '/mathis.jpg', name: 'Mathis' },
     { src: '/martial.jpg', name: 'Martial' },
@@ -42,11 +38,11 @@ export const Login: React.FC = () => {
                 navigate('/');
             } else {
                 await authService.signUp(email, password, name);
-                setSuccessMsg("Compte créé ! Vous pouvez maintenant vous connecter.");
+                setSuccessMsg("Compte cree. Vous pouvez maintenant vous connecter.");
                 setIsLogin(true);
             }
         } catch (err: any) {
-            setError(err.message || 'Échec de l\'authentification');
+            setError(err.message || "Echec de l'authentification");
         } finally {
             setLoading(false);
         }
@@ -60,102 +56,78 @@ export const Login: React.FC = () => {
     };
 
     return (
-        <div className="min-h-screen flex">
-            {/* Left Panel - Branding */}
-            <div className="hidden lg:flex lg:w-1/2 bg-gradient-to-br from-primary via-primary to-violet-700 p-12 flex-col justify-between relative overflow-hidden">
-                
-                {/* Background Pattern */}
-                <div className="absolute inset-0 opacity-10">
-                    <div className="absolute top-20 left-20 w-72 h-72 bg-white rounded-full blur-3xl"></div>
-                    <div className="absolute bottom-20 right-20 w-96 h-96 bg-white rounded-full blur-3xl"></div>
-                </div>
-                
-                <div className="relative z-10">
-                    {/* Logo */}
-                    <div className="flex items-center gap-3">
-                        <img 
-                            src="/logo_lexia.png" 
-                            alt="Lexia" 
-                            className="h-10 w-auto brightness-0 invert"
-                        />
+        <div className="min-h-screen flex bg-white dark:bg-neutral-950">
+            {/* Left Panel — Image */}
+            <div className="hidden lg:flex lg:w-[55%] relative overflow-hidden">
+                <img
+                    src="/image.png"
+                    alt=""
+                    className="absolute inset-0 w-full h-full object-cover"
+                />
+                {/* Overlay content */}
+                <div className="absolute inset-0 bg-gradient-to-t from-black/50 via-transparent to-black/20 z-10" />
+                <div className="relative z-20 flex flex-col justify-between p-10 w-full">
+                    <div>
+                        <img src="/logo_konekt.png" alt="Konekt" className="h-5 w-auto brightness-0 invert" />
                     </div>
-                </div>
-
-                <div className="relative z-10 space-y-6">
-                    <h1 className="text-4xl font-bold text-white leading-tight">
-                        Votre CRM intelligent<br />
-                        <span className="text-white/80">propulsé par l'IA</span>
-                    </h1>
-                    <p className="text-white/70 text-lg max-w-md">
-                        Gérez vos relations clients, suivez votre pipeline et boostez votre productivité avec des insights intelligents.
-                    </p>
-                    
-                    <div className="flex items-center gap-4 pt-4">
-                        <div className="flex -space-x-3">
-                            {teamPhotos.map((photo, i) => (
-                                <div 
-                                    key={i}
-                                    className="w-12 h-12 rounded-full border-3 border-white/40 overflow-hidden shadow-lg hover:scale-110 hover:z-10 transition-transform duration-200"
-                                    style={{ 
-                                        animationDelay: `${i * 0.1}s`,
-                                    }}
-                                >
-                                    <img 
-                                        src={photo.src} 
-                                        alt={photo.name}
-                                        className="w-full h-full object-cover"
-                                        onError={(e) => {
-                                            // Fallback to initials if image fails
-                                            const target = e.target as HTMLImageElement;
-                                            target.style.display = 'none';
-                                            target.parentElement!.innerHTML = `<div class="w-full h-full bg-white/20 flex items-center justify-center text-white font-bold">${photo.name[0]}</div>`;
-                                        }}
-                                    />
-                                </div>
-                            ))}
-                        </div>
-                        <p className="text-white/70 text-sm">
-                            Rejoint par <span className="text-white font-medium">+50 équipes</span>
+                    <div className="max-w-md space-y-3">
+                        <h1 className="text-3xl font-bold text-white leading-tight tracking-tight">
+                            Votre CRM propulse par l'IA
+                        </h1>
+                        <p className="text-white/70 text-sm leading-relaxed">
+                            Gerez vos clients, automatisez vos relances, et closez plus vite.
                         </p>
+                        <div className="flex items-center gap-3 pt-2">
+                            <div className="flex -space-x-2">
+                                {teamPhotos.map((photo, i) => (
+                                    <div key={i} className="w-7 h-7 rounded-full border-2 border-white/30 overflow-hidden">
+                                        <img src={photo.src} alt={photo.name} className="w-full h-full object-cover"
+                                            onError={(e) => { const t = e.target as HTMLImageElement; t.style.display = 'none'; t.parentElement!.innerHTML = `<div class="w-full h-full bg-white/20 flex items-center justify-center text-white text-xs font-semibold">${photo.name[0]}</div>`; }}
+                                        />
+                                    </div>
+                                ))}
+                            </div>
+                            <p className="text-white/50 text-xs">+50 equipes</p>
+                        </div>
                     </div>
                 </div>
-
-                <div className="relative z-10" />
             </div>
 
-            {/* Right Panel - Login Form */}
-            <div className="flex-1 flex items-center justify-center p-8 bg-background">
-                <div className="w-full max-w-md space-y-8">
+            {/* Right Panel — Form */}
+            <div className="flex-1 flex items-center justify-center p-8">
+                <div className="w-full max-w-[400px] space-y-8">
                     {/* Mobile Logo */}
-                    <div className="lg:hidden flex justify-center mb-8">
-                        <img 
-                            src="/logo_lexia.png" 
-                            alt="Lexia" 
-                            className="h-10 w-auto dark:invert"
+                    <div className="lg:hidden flex justify-center mb-6">
+                        <img
+                            src="/logo_konekt.png"
+                            alt="Konekt"
+                            className="h-5 w-auto brightness-[0.85]"
                         />
                     </div>
 
-                    <div className="space-y-2 text-center lg:text-left">
-                        <h2 className="text-2xl font-bold tracking-tight">
-                            {isLogin ? 'Bon retour !' : 'Créer un compte'}
+                    {/* Header */}
+                    <div className="space-y-1.5">
+                        <h2 className="text-2xl font-semibold tracking-tight text-foreground">
+                            {isLogin ? 'Bon retour' : 'Creer un compte'}
                         </h2>
-                        <p className="text-muted-foreground">
-                            {isLogin 
-                                ? 'Connectez-vous pour accéder à votre espace' 
+                        <p className="text-muted-foreground text-sm">
+                            {isLogin
+                                ? 'Connectez-vous pour acceder a votre espace'
                                 : 'Remplissez les informations ci-dessous'}
                         </p>
                         {isDemo && (
                             <Badge variant="secondary" className="mt-2">
-                                <Database className="w-3 h-3 mr-1" /> 
-                                Mode Démo (Hors-ligne)
+                                <Database className="w-3 h-3 mr-1" />
+                                Mode Demo
                             </Badge>
                         )}
                     </div>
 
+                    {/* Form */}
                     <form onSubmit={handleSubmit} className="space-y-4">
                         {!isLogin && (
-                            <div className="space-y-2 animate-in fade-in-0">
-                                <Label htmlFor="name">Nom complet</Label>
+                            <div className="space-y-2">
+                                <Label htmlFor="name" className="text-sm font-medium">Nom complet</Label>
                                 <div className="relative">
                                     <UserPlus className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
                                     <Input
@@ -164,15 +136,15 @@ export const Login: React.FC = () => {
                                         required
                                         value={name}
                                         onChange={(e) => setName(e.target.value)}
-                                        className="pl-10"
-                                        placeholder="ex: Jean Dupont"
+                                        className="pl-10 h-11"
+                                        placeholder="Jean Dupont"
                                     />
                                 </div>
                             </div>
                         )}
 
                         <div className="space-y-2">
-                            <Label htmlFor="email">Email</Label>
+                            <Label htmlFor="email" className="text-sm font-medium">Email</Label>
                             <div className="relative">
                                 <Mail className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
                                 <Input
@@ -181,14 +153,14 @@ export const Login: React.FC = () => {
                                     required
                                     value={email}
                                     onChange={(e) => setEmail(e.target.value)}
-                                    className="pl-10"
+                                    className="pl-10 h-11"
                                     placeholder="nom@entreprise.fr"
                                 />
                             </div>
                         </div>
 
                         <div className="space-y-2">
-                            <Label htmlFor="password">Mot de passe</Label>
+                            <Label htmlFor="password" className="text-sm font-medium">Mot de passe</Label>
                             <div className="relative">
                                 <Lock className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
                                 <Input
@@ -197,7 +169,7 @@ export const Login: React.FC = () => {
                                     required
                                     value={password}
                                     onChange={(e) => setPassword(e.target.value)}
-                                    className="pl-10"
+                                    className="pl-10 h-11"
                                     placeholder="••••••••"
                                     minLength={6}
                                 />
@@ -205,89 +177,83 @@ export const Login: React.FC = () => {
                         </div>
 
                         {error && (
-                            <div className="p-3 bg-destructive/10 text-destructive text-sm rounded-lg border border-destructive/20 flex items-center gap-2 animate-in fade-in-0">
-                                <span className="h-1.5 w-1.5 rounded-full bg-destructive" />
+                            <div className="p-3 bg-red-50 dark:bg-red-950/30 text-red-600 dark:text-red-400 text-sm rounded-lg border border-red-200 dark:border-red-900/50 flex items-center gap-2">
+                                <span className="h-1.5 w-1.5 rounded-full bg-red-500 flex-shrink-0" />
                                 {error}
                             </div>
                         )}
 
                         {successMsg && (
-                            <div className="p-3 bg-emerald-500/10 text-emerald-600 text-sm rounded-lg border border-emerald-500/20 flex items-center gap-2 animate-in fade-in-0">
-                                <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
+                            <div className="p-3 bg-emerald-50 dark:bg-emerald-950/30 text-emerald-600 dark:text-emerald-400 text-sm rounded-lg border border-emerald-200 dark:border-emerald-900/50 flex items-center gap-2">
+                                <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 flex-shrink-0" />
                                 {successMsg}
                             </div>
                         )}
 
-                        <Button type="submit" disabled={loading} className="w-full mt-6">
+                        <Button
+                            type="submit"
+                            disabled={loading}
+                            className="w-full h-11 mt-2 font-medium"
+                        >
                             {loading ? (
                                 <Loader2 className="h-4 w-4 animate-spin" />
                             ) : isLogin ? (
-                                <>Se connecter <ArrowRight className="h-4 w-4" /></>
+                                <span className="flex items-center gap-2">Se connecter <ArrowRight className="h-4 w-4" /></span>
                             ) : (
-                                <>Créer le compte <UserPlus className="h-4 w-4" /></>
+                                <span className="flex items-center gap-2">Creer le compte <UserPlus className="h-4 w-4" /></span>
                             )}
                         </Button>
                     </form>
 
-                    <div className="relative">
-                        <div className="absolute inset-0 flex items-center">
-                            <Separator />
-                        </div>
-                        <div className="relative flex justify-center text-xs uppercase">
-                            <span className="bg-background px-2 text-muted-foreground">
-                                {isLogin ? 'Nouveau ici ?' : 'Déjà un compte ?'}
+                    {/* Switch login/signup */}
+                    <div className="text-center">
+                        <button
+                            onClick={() => { setIsLogin(!isLogin); setError(''); setSuccessMsg(''); }}
+                            className="text-sm text-muted-foreground hover:text-foreground transition-colors"
+                        >
+                            {isLogin ? "Pas encore de compte ?" : "Deja un compte ?"}{' '}
+                            <span className="text-orange-500 font-medium hover:text-orange-600">
+                                {isLogin ? "S'inscrire" : "Se connecter"}
                             </span>
-                        </div>
+                        </button>
                     </div>
 
-                    <Button 
-                        variant="outline" 
-                        className="w-full"
-                        onClick={() => { setIsLogin(!isLogin); setError(''); setSuccessMsg(''); }}
-                    >
-                        {isLogin ? "Créer un compte" : "Se connecter"}
-                    </Button>
-
-                    {/* Demo Hints */}
-                    <Card className="bg-muted/50 border-dashed">
-                        <CardHeader className="pb-3">
-                            <CardTitle className="text-sm flex items-center gap-2">
-                                <Sparkles className="h-4 w-4 text-primary" />
-                                Accès Démo
-                            </CardTitle>
-                            <CardDescription className="text-xs">
-                                Cliquez sur un profil pour pré-remplir. Inscrivez-vous d'abord si le compte n'existe pas.
-                            </CardDescription>
-                        </CardHeader>
-                        <CardContent className="pt-0">
-                            <div className="flex flex-wrap gap-2">
-                                {[
-                                    { email: 'mathis@lexia.fr', name: 'Mathis', role: 'Account Exec', photo: '/mathis.jpg' },
-                                    { email: 'martial@lexia.fr', name: 'Martial', role: 'Director', photo: '/martial.jpg' },
-                                    { email: 'hugo@lexia.fr', name: 'Hugo', role: 'CSM', photo: '/hugo.jpg' },
-                                ].map((demo) => (
-                                    <Button
-                                        key={demo.email}
-                                        variant="secondary"
-                                        size="sm"
-                                        onClick={() => fillDemo(demo.email, demo.name)}
-                                        className="text-xs gap-2"
-                                    >
-                                        <img 
-                                            src={demo.photo} 
-                                            alt={demo.name}
-                                            className="w-5 h-5 rounded-full object-cover"
-                                            onError={(e) => {
-                                                (e.target as HTMLImageElement).style.display = 'none';
-                                            }}
-                                        />
-                                        {demo.name}
-                                        <span className="text-muted-foreground">({demo.role})</span>
-                                    </Button>
-                                ))}
+                    {/* Demo access */}
+                    <div className="rounded-xl border border-dashed border-orange-200 dark:border-orange-900/30 bg-orange-50/50 dark:bg-orange-950/10 p-4 space-y-3">
+                        <div className="flex items-center gap-2">
+                            <div className="h-6 w-6 rounded-md bg-orange-100 dark:bg-orange-900/30 flex items-center justify-center">
+                                <ChevronRight className="h-3.5 w-3.5 text-orange-500" />
                             </div>
-                        </CardContent>
-                    </Card>
+                            <p className="text-sm font-medium text-foreground">Acces Demo</p>
+                        </div>
+                        <p className="text-xs text-muted-foreground">
+                            Cliquez sur un profil pour pre-remplir le formulaire.
+                        </p>
+                        <div className="flex flex-wrap gap-2">
+                            {[
+                                { email: 'mathis@konekt.fr', name: 'Mathis', role: 'Account Exec', photo: '/mathis.jpg' },
+                                { email: 'martial@konekt.fr', name: 'Martial', role: 'Director', photo: '/martial.jpg' },
+                                { email: 'hugo@konekt.fr', name: 'Hugo', role: 'CSM', photo: '/hugo.jpg' },
+                            ].map((demo) => (
+                                <button
+                                    key={demo.email}
+                                    onClick={() => fillDemo(demo.email, demo.name)}
+                                    className="flex items-center gap-2 px-3 py-2 rounded-lg border border-orange-200/50 dark:border-orange-900/20 bg-white dark:bg-neutral-900 hover:border-orange-300 dark:hover:border-orange-800/40 transition-all text-sm group"
+                                >
+                                    <img
+                                        src={demo.photo}
+                                        alt={demo.name}
+                                        className="w-6 h-6 rounded-full object-cover"
+                                        onError={(e) => {
+                                            (e.target as HTMLImageElement).style.display = 'none';
+                                        }}
+                                    />
+                                    <span className="font-medium text-foreground">{demo.name}</span>
+                                    <span className="text-muted-foreground text-xs">{demo.role}</span>
+                                </button>
+                            ))}
+                        </div>
+                    </div>
                 </div>
             </div>
         </div>

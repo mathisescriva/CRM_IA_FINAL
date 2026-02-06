@@ -59,7 +59,7 @@ export const Kanban: React.FC = () => {
         const colors: Record<string, string> = {
             'entry_point': 'bg-slate-500',
             'exchange': 'bg-blue-500',
-            'proposal': 'bg-violet-500',
+            'proposal': 'bg-orange-500',
             'validation': 'bg-amber-500',
             'client_success': 'bg-emerald-500',
         };

@@ -9,6 +9,7 @@ import { cn } from '../lib/utils';
 interface MentionInputProps {
     value: string;
     onChange: (value: string, mentions: string[]) => void;
+    onSubmit?: () => void;
     placeholder?: string;
     multiline?: boolean;
     className?: string;
@@ -17,6 +18,7 @@ interface MentionInputProps {
 export const MentionInput: React.FC<MentionInputProps> = ({
     value,
     onChange,
+    onSubmit,
     placeholder = "Écrivez ici... utilisez @ pour mentionner",
     multiline = false,
     className
@@ -73,27 +75,31 @@ export const MentionInput: React.FC<MentionInputProps> = ({
 
     // Handle keyboard navigation
     const handleKeyDown = (e: React.KeyboardEvent) => {
-        if (!showSuggestions || filteredMembers.length === 0) return;
-
-        switch (e.key) {
-            case 'ArrowDown':
-                e.preventDefault();
-                setSuggestionIndex(i => Math.min(i + 1, filteredMembers.length - 1));
-                break;
-            case 'ArrowUp':
-                e.preventDefault();
-                setSuggestionIndex(i => Math.max(i - 1, 0));
-                break;
-            case 'Enter':
-            case 'Tab':
-                if (showSuggestions) {
+        if (showSuggestions && filteredMembers.length > 0) {
+            switch (e.key) {
+                case 'ArrowDown':
+                    e.preventDefault();
+                    setSuggestionIndex(i => Math.min(i + 1, filteredMembers.length - 1));
+                    return;
+                case 'ArrowUp':
+                    e.preventDefault();
+                    setSuggestionIndex(i => Math.max(i - 1, 0));
+                    return;
+                case 'Enter':
+                case 'Tab':
                     e.preventDefault();
                     insertMention(filteredMembers[suggestionIndex]);
-                }
-                break;
-            case 'Escape':
-                setShowSuggestions(false);
-                break;
+                    return;
+                case 'Escape':
+                    setShowSuggestions(false);
+                    return;
+            }
+        }
+
+        // Enter to submit (without Shift for newline in multiline)
+        if (e.key === 'Enter' && !e.shiftKey && onSubmit) {
+            e.preventDefault();
+            onSubmit();
         }
     };
 

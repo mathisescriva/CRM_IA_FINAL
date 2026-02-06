@@ -5,7 +5,7 @@ import { CommandPalette, useCommandPalette } from './CommandPalette';
 import { Search, Menu, WifiOff, Command, Bell, Check, X } from 'lucide-react';
 import { VoiceAssistant } from './VoiceAssistant';
 import { isSupabaseConfigured } from '../services/supabase';
-import { workspaceService, Notification } from '../services/workspace';
+import { workspaceService, type Notification as AppNotification } from '../services/workspace';
 import { Button } from './ui/Button';
 import { Badge } from './ui/Badge';
 import { cn, formatRelativeTime } from '../lib/utils';
@@ -18,21 +18,21 @@ interface AppLayoutProps {
 const NotificationDropdown: React.FC = () => {
     const navigate = useNavigate();
     const [open, setOpen] = useState(false);
-    const [notifications, setNotifications] = useState<Notification[]>([]);
+    const [notifications, setNotifications] = useState<AppNotification[]>([]);
     const [unreadCount, setUnreadCount] = useState(0);
 
     useEffect(() => {
-        const loadNotifications = () => {
-            setNotifications(workspaceService.getMyNotifications());
-            setUnreadCount(workspaceService.getUnreadCount());
+        const loadNotifications = async () => {
+            setNotifications(await workspaceService.getMyNotifications());
+            setUnreadCount(await workspaceService.getUnreadCount());
         };
         loadNotifications();
 
-        window.addEventListener('notification-update', loadNotifications);
-        return () => window.removeEventListener('notification-update', loadNotifications);
+        window.addEventListener('notification-update', loadNotifications as EventListener);
+        return () => window.removeEventListener('notification-update', loadNotifications as EventListener);
     }, []);
 
-    const handleNotificationClick = (notif: Notification) => {
+    const handleNotificationClick = (notif: AppNotification) => {
         workspaceService.markAsRead(notif.id);
         if (notif.link) {
             navigate(notif.link);
@@ -140,9 +140,37 @@ const ConnectionStatus: React.FC = () => {
     );
 };
 
+// Request desktop notification permission
+const requestNotificationPermission = () => {
+    if ('Notification' in window && Notification.permission === 'default') {
+        Notification.requestPermission();
+    }
+};
+
+// Show desktop notification
+const showDesktopNotification = (title: string, body: string) => {
+    if ('Notification' in window && Notification.permission === 'granted') {
+        new window.Notification(title, { body, icon: '/logo_konekt.png' });
+    }
+};
+
 export const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
     const [sidebarOpen, setSidebarOpen] = useState(false);
     const { open: cmdOpen, setOpen: setCmdOpen } = useCommandPalette();
+
+    useEffect(() => {
+        requestNotificationPermission();
+        
+        // Listen for new notifications and show desktop alerts
+        const handleNewNotification = (e: CustomEvent) => {
+            const detail = e.detail;
+            if (detail?.title) {
+                showDesktopNotification(detail.title, detail.message || '');
+            }
+        };
+        window.addEventListener('desktop-notification', handleNewNotification as EventListener);
+        return () => window.removeEventListener('desktop-notification', handleNewNotification as EventListener);
+    }, []);
 
     return (
         <div className="min-h-screen bg-background">

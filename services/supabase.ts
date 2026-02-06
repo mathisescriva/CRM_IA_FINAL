@@ -38,7 +38,7 @@ function mapDbToCompany(row: any): Company {
         name: row.name,
         logoUrl: row.logo_url,
         type: row.type as CompanyType,
-        entityType: row.entity_type as EntityType,
+        entityType: (row.entity_type || 'client') as EntityType,
         website: row.website,
         lastContactDate: row.last_contact_date,
         importance: row.importance as Priority,

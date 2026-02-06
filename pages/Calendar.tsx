@@ -35,7 +35,7 @@ export const Calendar: React.FC = () => {
     const [currentDate, setCurrentDate] = useState(new Date());
     const [events, setEvents] = useState<CalendarEvent[]>([]);
     const [loading, setLoading] = useState(true);
-    const [view, setView] = useState<'week' | 'agenda'>('agenda');
+    const [view, setView] = useState<'week' | 'agenda' | 'month'>('agenda');
     const [selectedEvent, setSelectedEvent] = useState<CalendarEvent | null>(null);
     const [isAuthenticated, setIsAuthenticated] = useState(false);
     const [showUpcoming, setShowUpcoming] = useState(true);
@@ -97,6 +97,11 @@ export const Calendar: React.FC = () => {
             start.setHours(0, 0, 0, 0);
             end.setDate(start.getDate() + 6);
             end.setHours(23, 59, 59, 999);
+        } else if (view === 'month') {
+            start.setDate(1);
+            start.setHours(0, 0, 0, 0);
+            end.setMonth(start.getMonth() + 1, 0);
+            end.setHours(23, 59, 59, 999);
         } else {
             // Agenda: 30 jours à partir d'aujourd'hui
             start.setHours(0, 0, 0, 0);
@@ -111,6 +116,8 @@ export const Calendar: React.FC = () => {
         const newDate = new Date(currentDate);
         if (view === 'week') {
             newDate.setDate(newDate.getDate() + (direction === 'next' ? 7 : -7));
+        } else if (view === 'month') {
+            newDate.setMonth(newDate.getMonth() + (direction === 'next' ? 1 : -1));
         } else {
             newDate.setDate(newDate.getDate() + (direction === 'next' ? 30 : -30));
         }
@@ -122,6 +129,9 @@ export const Calendar: React.FC = () => {
         
         if (view === 'week') {
             return `${start.toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' })} - ${end.toLocaleDateString('fr-FR', { day: 'numeric', month: 'short', year: 'numeric' })}`;
+        }
+        if (view === 'month') {
+            return start.toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' });
         }
         return `${start.toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' })}`;
     };
@@ -267,6 +277,15 @@ export const Calendar: React.FC = () => {
                     >
                         Semaine
                     </button>
+                    <button
+                        onClick={() => setView('month')}
+                        className={cn(
+                            "px-3 py-1.5 text-sm font-medium rounded-lg transition-colors",
+                            view === 'month' ? "bg-primary text-primary-foreground" : "hover:bg-muted"
+                        )}
+                    >
+                        Mois
+                    </button>
                 </div>
             </div>
 
@@ -286,6 +305,8 @@ export const Calendar: React.FC = () => {
                     onToggleUpcoming={() => setShowUpcoming(!showUpcoming)}
                     dateRangeLabel={getDateRangeLabel()}
                 />
+            ) : view === 'month' ? (
+                <MonthView events={events} currentDate={currentDate} onEventClick={setSelectedEvent} />
             ) : (
                 <WeekView events={events} currentDate={currentDate} onEventClick={setSelectedEvent} />
             )}
@@ -309,6 +330,93 @@ export const Calendar: React.FC = () => {
                     }
                 }}
             />
+        </div>
+    );
+};
+
+// Month View - Calendar grid
+const MonthView: React.FC<{
+    events: CalendarEvent[];
+    currentDate: Date;
+    onEventClick: (event: CalendarEvent) => void;
+}> = ({ events, currentDate, onEventClick }) => {
+    const year = currentDate.getFullYear();
+    const month = currentDate.getMonth();
+    const firstDay = new Date(year, month, 1);
+    const lastDay = new Date(year, month + 1, 0);
+    const startDay = firstDay.getDay(); // 0=Sun
+    const daysInMonth = lastDay.getDate();
+    const today = new Date();
+
+    // Build grid cells
+    const cells: (number | null)[] = [];
+    for (let i = 0; i < startDay; i++) cells.push(null);
+    for (let d = 1; d <= daysInMonth; d++) cells.push(d);
+    while (cells.length % 7 !== 0) cells.push(null);
+
+    const getEventsForDay = (day: number) => {
+        const dayStart = new Date(year, month, day, 0, 0, 0);
+        const dayEnd = new Date(year, month, day, 23, 59, 59);
+        return events.filter(e => {
+            const eventDate = new Date(e.start.dateTime || e.start.date!);
+            return eventDate >= dayStart && eventDate <= dayEnd;
+        });
+    };
+
+    const isToday = (day: number) =>
+        day === today.getDate() && month === today.getMonth() && year === today.getFullYear();
+
+    return (
+        <div className="rounded-xl border border-border overflow-hidden">
+            {/* Day headers */}
+            <div className="grid grid-cols-7 bg-muted/50 border-b border-border">
+                {['Dim', 'Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam'].map(d => (
+                    <div key={d} className="px-2 py-2.5 text-xs font-medium text-muted-foreground text-center">{d}</div>
+                ))}
+            </div>
+            {/* Calendar grid */}
+            <div className="grid grid-cols-7">
+                {cells.map((day, i) => {
+                    const dayEvents = day ? getEventsForDay(day) : [];
+                    return (
+                        <div
+                            key={i}
+                            className={cn(
+                                "min-h-[100px] border-b border-r border-border p-1.5 transition-colors",
+                                !day && "bg-muted/20",
+                                day && isToday(day) && "bg-primary/5",
+                                i % 7 === 6 && "border-r-0"
+                            )}
+                        >
+                            {day && (
+                                <>
+                                    <span className={cn(
+                                        "inline-flex h-6 w-6 items-center justify-center rounded-full text-xs font-medium mb-1",
+                                        isToday(day) ? "bg-primary text-primary-foreground" : "text-foreground"
+                                    )}>
+                                        {day}
+                                    </span>
+                                    <div className="space-y-0.5">
+                                        {dayEvents.slice(0, 3).map(evt => (
+                                            <button
+                                                key={evt.id}
+                                                onClick={() => onEventClick(evt)}
+                                                className="w-full text-left px-1.5 py-0.5 rounded text-[10px] font-medium truncate bg-primary/10 text-primary hover:bg-primary/20 transition-colors"
+                                            >
+                                                {evt.start.dateTime && new Date(evt.start.dateTime).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}{' '}
+                                                {evt.summary || 'Sans titre'}
+                                            </button>
+                                        ))}
+                                        {dayEvents.length > 3 && (
+                                            <p className="text-[10px] text-muted-foreground px-1.5">+{dayEvents.length - 3} de plus</p>
+                                        )}
+                                    </div>
+                                </>
+                            )}
+                        </div>
+                    );
+                })}
+            </div>
         </div>
     );
 };

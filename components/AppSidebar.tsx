@@ -17,7 +17,13 @@ import {
     Sun,
     Sparkles,
     Calendar,
-    Handshake
+    Handshake,
+    DollarSign,
+    BarChart3,
+    Mail,
+    CheckSquare,
+    FileText,
+    Wrench
 } from 'lucide-react';
 import { cn, getInitials } from '../lib/utils';
 import { authService } from '../services/auth';
@@ -45,6 +51,7 @@ const NAV_STRUCTURE: NavItem[] = [
         subItems: [
             { label: 'Vue d\'ensemble', path: '/', icon: PieChart },
             { label: 'Pipeline', path: '/kanban', icon: FolderKanban },
+            { label: 'Analytics', path: '/analytics', icon: BarChart3 },
         ]
     },
     { 
@@ -56,9 +63,19 @@ const NAV_STRUCTURE: NavItem[] = [
             { label: 'Annuaire contacts', path: '/annuaire', icon: Contact },
         ]
     },
+    { icon: FolderKanban, label: 'Projets', path: '/projects' },
+    { icon: CheckSquare, label: 'Tâches', path: '/tasks' },
     { icon: Calendar, label: 'Calendrier', path: '/calendar' },
-    { icon: Inbox, label: 'Inbox', path: '/inbox' },
-    { icon: Users, label: 'Toolbox', path: '/toolbox' },
+    { 
+        icon: Mail, 
+        label: 'Messagerie', 
+        path: '/inbox',
+        subItems: [
+            { label: 'Inbox', path: '/inbox', icon: Inbox },
+            { label: 'Templates', path: '/templates', icon: FileText },
+        ]
+    },
+    { icon: Wrench, label: 'Toolbox', path: '/toolbox' },
 ];
 
 interface AppSidebarProps {
@@ -131,11 +148,11 @@ export const AppSidebar: React.FC<AppSidebarProps> = ({ isOpen, onClose }) => {
             >
                 {/* Header */}
                 <div className="flex h-16 items-center justify-between px-4 border-b border-sidebar-border">
-                    <Link to="/" className="flex items-center gap-2" onClick={handleLinkClick}>
+                    <Link to="/" className="flex items-center gap-2 pl-2" onClick={handleLinkClick}>
                         <img 
-                            src={user?.customAppLogo || "/logo_lexia.png"}
-                            alt="Lexia" 
-                            className="h-8 w-auto object-contain dark:invert" 
+                            src={user?.customAppLogo || "/logo_konekt.png"}
+                            alt="Konekt" 
+                            className="h-4 w-auto object-contain brightness-[0.85] dark:invert" 
                         />
                     </Link>
                     <Button 

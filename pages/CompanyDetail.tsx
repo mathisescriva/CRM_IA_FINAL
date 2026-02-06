@@ -9,16 +9,16 @@ import {
     Plus, X, MessageSquare, Clock, Check,
     AlertCircle, Sparkles, ChevronRight, User,
     FileText, ExternalLink, AtSign, Settings, Trash2, Building2, Upload, Link, UserPlus, Users, Handshake, Percent, TrendingUp,
-    Inbox, Send, Loader2, RefreshCw
+    Inbox, Send, Loader2, RefreshCw, DollarSign, Target, Trophy, Ban, CheckCircle2, ListTodo, Flag, FolderKanban
 } from 'lucide-react';
 import { companyService } from '../services/supabase';
-import { workspaceService } from '../services/workspace';
+import { workspaceService, Task } from '../services/workspace';
 import { authService, LEXIA_TEAM } from '../services/auth';
 import { gmailService } from '../services/gmail';
 import { calendarService } from '../services/calendar';
 import { MentionInput } from '../components/MentionInput';
 import { ScheduleMeetingModal } from '../components/ScheduleMeetingModal';
-import { Company, Contact, PipelineStage, Activity, CompanyType, Priority, TeamMember, CompanyDocument } from '../types';
+import { Company, Contact, PipelineStage, Activity, CompanyType, Priority, TeamMember, CompanyDocument, Deal, DealStage, Project, ProjectStatus } from '../types';
 import { cn, getInitials, formatRelativeTime } from '../lib/utils';
 import { PIPELINE_COLUMNS } from '../constants';
 
@@ -67,6 +67,19 @@ export const CompanyDetail: React.FC = () => {
     const [showDocumentViewer, setShowDocumentViewer] = useState(false);
     const [selectedDocument, setSelectedDocument] = useState<CompanyDocument | null>(null);
     
+    // Tab navigation
+    const [activeTab, setActiveTab] = useState<'overview' | 'contacts' | 'activity' | 'documents' | 'emails' | 'projects'>('overview');
+    
+    // Company projects (= deals) & tasks
+    const [companyTasks, setCompanyTasks] = useState<Task[]>([]);
+    const [companyProjects, setCompanyProjects] = useState<Project[]>([]);
+    const [showProjectModal, setShowProjectModal] = useState(false);
+    const [projectForm, setProjectForm] = useState({
+        title: '', description: '', budget: 0, probability: 50,
+        stage: 'qualification' as DealStage, expectedCloseDate: '',
+        ownerId: 'mathis',
+    });
+    
     // Email interactions
     const [companyEmails, setCompanyEmails] = useState<CompanyEmail[]>([]);
     const [loadingEmails, setLoadingEmails] = useState(false);
@@ -81,12 +94,36 @@ export const CompanyDetail: React.FC = () => {
     useEffect(() => {
         if (id) {
             companyService.getById(id).then(data => {
-                console.log("[CompanyDetail] Company loaded:", data?.name);
-                console.log("[CompanyDetail] Contacts:", data?.contacts?.map(c => ({ name: c.name, emails: c.emails })));
                 setCompany(data || null);
                 setLoading(false);
             });
+            // Load company deals & tasks
+            loadCompanyProjects(id);
         }
+    }, [id]);
+    
+    const loadCompanyProjects = async (companyId: string) => {
+        const [tasks, projects] = await Promise.all([
+            workspaceService.getTasksByCompany(companyId),
+            workspaceService.getProjectsByCompany(companyId),
+        ]);
+        setCompanyTasks(tasks);
+        setCompanyProjects(projects);
+    };
+    
+    
+    // Listen for deal/task/project updates
+    useEffect(() => {
+        if (!id) return;
+        const refresh = () => loadCompanyProjects(id);
+        window.addEventListener('deals-update', refresh);
+        window.addEventListener('tasks-update', refresh);
+        window.addEventListener('projects-update', refresh);
+        return () => {
+            window.removeEventListener('deals-update', refresh);
+            window.removeEventListener('tasks-update', refresh);
+            window.removeEventListener('projects-update', refresh);
+        };
     }, [id]);
     
     // Load upcoming meetings
@@ -353,7 +390,7 @@ export const CompanyDetail: React.FC = () => {
         });
 
         // Log activity with mentions for notifications
-        workspaceService.logActivity({
+        await workspaceService.logActivity({
             action: mentions.length > 0 ? 'mentioned' : 'contacted',
             targetType: 'company',
             targetId: company.id,
@@ -585,43 +622,226 @@ export const CompanyDetail: React.FC = () => {
                 </div>
             )}
 
+            {/* Tab Navigation */}
+            <div className="flex items-center gap-1 mb-6 border-b border-border pb-px overflow-x-auto">
+                {[
+                    { id: 'overview' as const, label: 'Vue d\'ensemble', icon: Building2 },
+                    { id: 'projects' as const, label: `Projets (${companyProjects.length})`, icon: FolderKanban },
+                    { id: 'contacts' as const, label: `Contacts (${company.contacts.length})`, icon: User },
+                    { id: 'activity' as const, label: 'Activité', icon: Clock },
+                    { id: 'documents' as const, label: `Documents (${company.documents.length})`, icon: FileText },
+                    { id: 'emails' as const, label: 'Emails', icon: Mail },
+                ].map(tab => {
+                    const TabIcon = tab.icon;
+                    return (
+                        <button
+                            key={tab.id}
+                            onClick={() => setActiveTab(tab.id)}
+                            className={cn(
+                                "flex items-center gap-2 px-4 py-2.5 text-sm font-medium whitespace-nowrap border-b-2 transition-all -mb-px",
+                                activeTab === tab.id
+                                    ? "border-primary text-foreground"
+                                    : "border-transparent text-muted-foreground hover:text-foreground hover:border-border"
+                            )}
+                        >
+                            <TabIcon className="h-4 w-4" />
+                            {tab.label}
+                        </button>
+                    );
+                })}
+            </div>
+
             <div className="grid grid-cols-3 gap-6">
                 {/* Main content */}
                 <div className="col-span-2 space-y-6">
-                    {/* What to do next - AI suggestions */}
-                    <Card>
-                        <div className="flex items-center gap-2 mb-4">
-                            <Sparkles className={cn("h-4 w-4", isPartner ? "text-purple-500" : "text-primary")} />
-                            <h2 className="font-medium">{isPartner ? 'Suggestions partenariat' : 'Prochaine action'}</h2>
-                        </div>
-                        <div className="space-y-2">
-                            {getNextActions(company, stageIndex, daysSinceContact).map((action, i) => (
-                                <button 
-                                    key={i}
-                                    className={cn(
-                                        "w-full flex items-center gap-3 p-3 rounded-lg border border-border transition-colors text-left",
-                                        isPartner ? "hover:border-purple-300 hover:bg-purple-50 dark:hover:bg-purple-950/20" : "hover:border-primary/30 hover:bg-primary/5"
-                                    )}
+                    {/* Overview: Projects summary */}
+                    {activeTab === 'overview' && (
+                        <Card>
+                            <div className="flex items-center justify-between mb-4">
+                                <div className="flex items-center gap-2">
+                                    <FolderKanban className="h-4 w-4 text-primary" />
+                                    <h2 className="font-medium">Projets</h2>
+                                    <span className="text-xs text-muted-foreground bg-muted px-2 py-0.5 rounded-full">{companyProjects.length}</span>
+                                </div>
+                                <button
+                                    onClick={() => setActiveTab('projects')}
+                                    className="text-xs text-primary hover:underline flex items-center gap-1"
                                 >
-                                    <div className={cn(
-                                        "h-8 w-8 rounded-lg flex items-center justify-center shrink-0",
-                                        action.priority === 'high' 
-                                            ? "bg-red-100 text-red-600 dark:bg-red-900/30" 
-                                            : isPartner 
-                                                ? "bg-purple-100 text-purple-600 dark:bg-purple-900/30"
-                                                : "bg-muted"
-                                    )}>
-                                        <action.icon className="h-4 w-4" />
-                                    </div>
-                                    <span className="text-sm flex-1">{action.text}</span>
-                                    <ChevronRight className="h-4 w-4 text-muted-foreground" />
+                                    Tout voir <ChevronRight className="h-3 w-3" />
                                 </button>
-                            ))}
-                        </div>
-                    </Card>
+                            </div>
+                            {companyProjects.length > 0 ? (
+                                <div className="space-y-3 mb-4">
+                                    {companyProjects.slice(0, 3).map(proj => {
+                                        const stageLabels: Record<string, string> = { qualification: 'Qualification', proposal: 'Proposition', negotiation: 'Négociation', closed_won: 'Gagné', closed_lost: 'Perdu' };
+                                        const stageColors: Record<string, string> = { qualification: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400', proposal: 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400', negotiation: 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400', closed_won: 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400', closed_lost: 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400' };
+                                        return (
+                                            <div 
+                                                key={proj.id} 
+                                                className="p-3 rounded-lg border border-border hover:shadow-sm hover:border-primary/30 transition-all cursor-pointer" 
+                                                onClick={() => navigate(`/projects?id=${proj.id}`)}
+                                            >
+                                                <div className="flex items-center justify-between mb-2">
+                                                    <h3 className="text-sm font-semibold truncate flex-1">{proj.title}</h3>
+                                                    <span className={cn("text-[10px] px-1.5 py-0.5 rounded-full font-medium ml-2 shrink-0", stageColors[proj.stage] || '')}>
+                                                        {stageLabels[proj.stage] || proj.stage}
+                                                    </span>
+                                                </div>
+                                                <div className="flex items-center gap-3 mb-1.5">
+                                                    <div className="flex-1 h-1.5 bg-muted rounded-full overflow-hidden">
+                                                        <div className="h-full bg-primary rounded-full transition-all" style={{ width: `${proj.progress}%` }} />
+                                                    </div>
+                                                    <span className="text-xs font-medium">{proj.progress}%</span>
+                                                </div>
+                                                <div className="flex items-center justify-between text-[10px] text-muted-foreground">
+                                                    <span className="font-semibold text-foreground">{proj.budget.toLocaleString('fr-FR')}€</span>
+                                                    <div className="flex items-center gap-2">
+                                                        <div className="flex -space-x-1">
+                                                            {(proj.members || []).slice(0, 3).map(m => {
+                                                                const member = LEXIA_TEAM.find(t => t.id === m.userId);
+                                                                return member ? <img key={m.userId} src={member.avatarUrl} alt="" className="h-4 w-4 rounded-full border border-background object-cover" /> : null;
+                                                            })}
+                                                        </div>
+                                                        <span>{proj.ownerName}</span>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                            ) : (
+                                <button 
+                                    onClick={() => setShowProjectModal(true)}
+                                    className="w-full py-6 mb-4 border border-dashed rounded-lg text-sm text-muted-foreground hover:border-primary hover:text-primary transition-colors flex flex-col items-center gap-2"
+                                >
+                                    <FolderKanban className="h-5 w-5" />
+                                    <span>Créer un projet pour {company.name}</span>
+                                </button>
+                            )}
+                            {/* Quick KPIs */}
+                            <div className="grid grid-cols-3 gap-3">
+                                <div className="p-3 rounded-lg bg-blue-50 dark:bg-blue-950/20 border border-blue-100 dark:border-blue-900/30 text-center">
+                                    <p className="text-lg font-bold text-blue-700 dark:text-blue-400">{companyProjects.filter(p => p.stage !== 'closed_won' && p.stage !== 'closed_lost').length}</p>
+                                    <p className="text-[10px] text-blue-600/70 dark:text-blue-400/70">En cours</p>
+                                </div>
+                                <div className="p-3 rounded-lg bg-green-50 dark:bg-green-950/20 border border-green-100 dark:border-green-900/30 text-center">
+                                    <p className="text-lg font-bold text-green-700 dark:text-green-400">{companyProjects.filter(p => p.stage === 'closed_won').reduce((s, p) => s + p.budget, 0).toLocaleString('fr-FR')}€</p>
+                                    <p className="text-[10px] text-green-600/70 dark:text-green-400/70">Signés</p>
+                                </div>
+                                <div className="p-3 rounded-lg bg-muted/50 text-center">
+                                    <p className="text-lg font-bold">{companyProjects.reduce((s, p) => s + p.budget, 0).toLocaleString('fr-FR')}€</p>
+                                    <p className="text-[10px] text-muted-foreground">Budget total</p>
+                                </div>
+                            </div>
+                        </Card>
+                    )}
+
+                    {/* PROJECTS TAB - Arborescence projets */}
+                    {activeTab === 'projects' && (
+                        <Card>
+                            <div className="flex items-center justify-between mb-5">
+                                <div className="flex items-center gap-2">
+                                    <FolderKanban className="h-4 w-4 text-primary" />
+                                    <h2 className="font-medium">Projets</h2>
+                                    <span className="text-xs text-muted-foreground bg-muted px-2 py-0.5 rounded-full">{companyProjects.length}</span>
+                                </div>
+                                <button 
+                                    onClick={() => setShowProjectModal(true)}
+                                    className="flex items-center gap-2 px-3 py-1.5 bg-primary text-primary-foreground rounded-lg text-xs font-medium hover:bg-primary/90 transition-colors"
+                                >
+                                    <Plus className="h-3.5 w-3.5" /> Nouveau projet
+                                </button>
+                            </div>
+                            {companyProjects.length === 0 ? (
+                                <button 
+                                    onClick={() => setShowProjectModal(true)}
+                                    className="w-full py-12 border-2 border-dashed rounded-xl text-sm text-muted-foreground hover:border-primary hover:text-primary transition-all flex flex-col items-center gap-3"
+                                >
+                                    <div className="h-12 w-12 rounded-xl bg-primary/10 flex items-center justify-center">
+                                        <FolderKanban className="h-6 w-6 text-primary" />
+                                    </div>
+                                    <div>
+                                        <p className="font-medium">Créer un premier projet</p>
+                                        <p className="text-xs mt-1">Chaque projet = 1 budget, 1 équipe, 1 drive</p>
+                                    </div>
+                                </button>
+                            ) : (
+                                <div className="space-y-3">
+                                    {companyProjects.map(proj => {
+                                        const stageLabels: Record<string, string> = { qualification: 'Qualification', proposal: 'Proposition', negotiation: 'Négociation', closed_won: 'Gagné', closed_lost: 'Perdu' };
+                                        const stageColors: Record<string, string> = { qualification: 'bg-blue-500', proposal: 'bg-orange-500', negotiation: 'bg-purple-500', closed_won: 'bg-green-500', closed_lost: 'bg-red-500' };
+                                        const stageBadgeColors: Record<string, string> = { qualification: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400', proposal: 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400', negotiation: 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400', closed_won: 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400', closed_lost: 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400' };
+                                        return (
+                                            <div 
+                                                key={proj.id}
+                                                onClick={() => navigate(`/projects?id=${proj.id}`)}
+                                                className="group p-4 rounded-xl border border-border hover:border-primary/40 hover:shadow-md transition-all cursor-pointer"
+                                            >
+                                                <div className="flex items-start gap-4">
+                                                    {/* Stage indicator */}
+                                                    <div className={cn("h-10 w-1 rounded-full shrink-0 mt-0.5", stageColors[proj.stage] || 'bg-muted')} />
+                                                    
+                                                    <div className="flex-1 min-w-0">
+                                                        <div className="flex items-center justify-between mb-2">
+                                                            <div className="flex items-center gap-2 min-w-0">
+                                                                <h3 className="text-sm font-semibold group-hover:text-primary transition-colors truncate">{proj.title}</h3>
+                                                                <span className={cn("text-[10px] px-2 py-0.5 rounded-full font-medium shrink-0", stageBadgeColors[proj.stage] || '')}>
+                                                                    {stageLabels[proj.stage] || proj.stage}
+                                                                </span>
+                                                            </div>
+                                                            <p className="text-sm font-bold shrink-0 ml-3">{proj.budget.toLocaleString('fr-FR')}€</p>
+                                                        </div>
+                                                        
+                                                        {proj.description && (
+                                                            <p className="text-xs text-muted-foreground mb-3 line-clamp-1">{proj.description}</p>
+                                                        )}
+                                                        
+                                                        {/* Progress bar */}
+                                                        <div className="flex items-center gap-3 mb-3">
+                                                            <div className="flex-1 h-1.5 bg-muted rounded-full overflow-hidden">
+                                                                <div className={cn("h-full rounded-full transition-all", stageColors[proj.stage] || 'bg-primary')} style={{ width: `${proj.progress}%` }} />
+                                                            </div>
+                                                            <span className="text-xs font-medium w-8 text-right">{proj.progress}%</span>
+                                                        </div>
+                                                        
+                                                        {/* Footer with team, probability, date */}
+                                                        <div className="flex items-center justify-between">
+                                                            <div className="flex items-center gap-3">
+                                                                <div className="flex -space-x-1.5">
+                                                                    {(proj.members || []).slice(0, 4).map(m => {
+                                                                        const member = LEXIA_TEAM.find(t => t.id === m.userId);
+                                                                        return member ? (
+                                                                            <img key={m.userId} src={member.avatarUrl} alt={member.name} title={member.name}
+                                                                                className="h-6 w-6 rounded-full border-2 border-background object-cover" />
+                                                                        ) : null;
+                                                                    })}
+                                                                </div>
+                                                                <span className="text-[10px] text-muted-foreground">{(proj.members || []).length} membres</span>
+                                                            </div>
+                                                            <div className="flex items-center gap-3 text-[10px] text-muted-foreground">
+                                                                <span className="font-medium">{proj.probability}%</span>
+                                                                {proj.expectedCloseDate && (
+                                                                    <span className="flex items-center gap-1">
+                                                                        <Calendar className="h-3 w-3" />
+                                                                        {new Date(proj.expectedCloseDate).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' })}
+                                                                    </span>
+                                                                )}
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                    <ChevronRight className="h-4 w-4 text-muted-foreground/50 group-hover:text-primary transition-colors shrink-0 mt-1" />
+                                                </div>
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                            )}
+                        </Card>
+                    )}
+
 
                     {/* Upcoming Meetings */}
-                    <Card>
+                    {(activeTab === 'overview' || activeTab === 'activity') && <Card>
                         <div className="flex items-center justify-between mb-4">
                             <div className="flex items-center gap-2">
                                 <Calendar className="h-4 w-4 text-purple-500" />
@@ -706,10 +926,10 @@ export const CompanyDetail: React.FC = () => {
                                 ))}
                             </div>
                         )}
-                    </Card>
+                    </Card>}
 
                     {/* Email Interactions History */}
-                    <Card>
+                    {(activeTab === 'overview' || activeTab === 'emails') && <Card>
                         <div className="flex items-center justify-between mb-4">
                             <div className="flex items-center gap-2">
                                 <Mail className="h-4 w-4 text-blue-500" />
@@ -822,25 +1042,62 @@ export const CompanyDetail: React.FC = () => {
                                 )}
                             </div>
                         )}
-                    </Card>
+                    </Card>}
                     
-                    {/* Manual Activity Log */}
-                    <Card>
+                    {/* Manual Activity Log - Chat style */}
+                    {(activeTab === 'overview' || activeTab === 'activity') && <Card>
                         <div className="flex items-center justify-between mb-4">
                             <div className="flex items-center gap-2">
                                 <MessageSquare className="h-4 w-4 text-primary" />
-                                <h2 className="font-medium">Notes & Appels</h2>
+                                <h2 className="font-medium">Notes & Échanges</h2>
                             </div>
                             <button 
                                 onClick={() => setShowActivityModal(true)}
-                                className="text-xs text-primary hover:underline flex items-center gap-1"
+                                className="text-xs text-muted-foreground hover:text-foreground flex items-center gap-1"
                             >
-                                <Plus className="h-3 w-3" /> Ajouter
+                                <Plus className="h-3 w-3" /> Appel / RDV
                             </button>
+                        </div>
+
+                        {/* Quick note input - chat style */}
+                        <div className="mb-4">
+                            <MentionInput
+                                value={activityForm.title}
+                                onChange={(text, newMentions) => {
+                                    setActivityForm(f => ({ ...f, title: text, type: 'note' }));
+                                    setMentions(newMentions);
+                                }}
+                                onSubmit={async () => {
+                                    if (!company || !activityForm.title.trim()) return;
+                                    await companyService.addActivity(company.id, {
+                                        type: 'note',
+                                        title: activityForm.title.trim(),
+                                        description: '',
+                                        date: new Date().toISOString(),
+                                        syncStatus: 'none'
+                                    });
+                                    if (mentions.length > 0) {
+                                        await workspaceService.logActivity({
+                                            action: 'mentioned',
+                                            targetType: 'company',
+                                            targetId: company.id,
+                                            targetName: company.name,
+                                            description: activityForm.title.trim(),
+                                            mentionedUsers: mentions
+                                        });
+                                    }
+                                    setActivityForm({ type: 'note', title: '', description: '' });
+                                    setMentions([]);
+                                    const updated = await companyService.getById(company.id);
+                                    if (updated) setCompany(updated);
+                                }}
+                                placeholder="Écrire une note... Entrée pour envoyer, @ pour mentionner"
+                                className="text-sm bg-muted/30"
+                            />
                         </div>
                         
                         {company.activities.length === 0 ? (
-                            <p className="text-sm text-muted-foreground text-center py-6">
+                            <p className="text-sm text-muted-foreground text-center py-4">
                                 Aucune note enregistrée
                             </p>
                         ) : (
@@ -848,20 +1105,20 @@ export const CompanyDetail: React.FC = () => {
                                 {company.activities.slice(0, 5).map(act => (
                                     <div key={act.id} className="flex items-start gap-3">
                                         <div className={cn(
-                                            "h-8 w-8 rounded-lg flex items-center justify-center shrink-0 mt-0.5",
-                                            act.type === 'email' ? "bg-blue-100 text-blue-600 dark:bg-blue-900/30" :
-                                            act.type === 'call' ? "bg-green-100 text-green-600 dark:bg-green-900/30" :
-                                            act.type === 'meeting' ? "bg-purple-100 text-purple-600 dark:bg-purple-900/30" :
+                                            "h-7 w-7 rounded-lg flex items-center justify-center shrink-0 mt-0.5",
+                                            act.type === 'email' ? "bg-blue-50 text-blue-500 dark:bg-blue-900/20" :
+                                            act.type === 'call' ? "bg-green-50 text-green-500 dark:bg-green-900/20" :
+                                            act.type === 'meeting' ? "bg-purple-50 text-purple-500 dark:bg-purple-900/20" :
                                             "bg-muted text-muted-foreground"
                                         )}>
-                                            {act.type === 'email' ? <Mail className="h-4 w-4" /> :
-                                             act.type === 'call' ? <Phone className="h-4 w-4" /> :
-                                             act.type === 'meeting' ? <Calendar className="h-4 w-4" /> :
-                                             <MessageSquare className="h-4 w-4" />}
+                                            {act.type === 'email' ? <Mail className="h-3.5 w-3.5" /> :
+                                             act.type === 'call' ? <Phone className="h-3.5 w-3.5" /> :
+                                             act.type === 'meeting' ? <Calendar className="h-3.5 w-3.5" /> :
+                                             <MessageSquare className="h-3.5 w-3.5" />}
                                         </div>
                                         <div className="flex-1 min-w-0">
-                                            <p className="text-sm font-medium">{act.title}</p>
-                                            <p className="text-xs text-muted-foreground">
+                                            <p className="text-sm">{act.title}</p>
+                                            <p className="text-[10px] text-muted-foreground">
                                                 {act.user} · {formatRelativeTime(act.date)}
                                             </p>
                                         </div>
@@ -869,10 +1126,10 @@ export const CompanyDetail: React.FC = () => {
                                 ))}
                             </div>
                         )}
-                    </Card>
+                    </Card>}
 
                     {/* Notes */}
-                    {company.generalComment && (
+                    {activeTab === 'overview' && company.generalComment && (
                         <Card>
                             <h2 className="font-medium mb-3">Notes</h2>
                             <p className="text-sm text-muted-foreground">{company.generalComment}</p>
@@ -883,7 +1140,7 @@ export const CompanyDetail: React.FC = () => {
                 {/* Sidebar */}
                 <div className="space-y-6">
                     {/* Contacts */}
-                    <Card>
+                    {(activeTab === 'overview' || activeTab === 'contacts') && <Card>
                         <div className="flex items-center justify-between mb-3">
                             <h2 className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
                                 Contacts
@@ -953,7 +1210,7 @@ export const CompanyDetail: React.FC = () => {
                                 ))}
                             </div>
                         )}
-                    </Card>
+                    </Card>}
 
                     {/* Team */}
                     <Card>
@@ -1010,7 +1267,7 @@ export const CompanyDetail: React.FC = () => {
                     </Card>
 
                     {/* Documents */}
-                    <Card>
+                    {(activeTab === 'overview' || activeTab === 'documents') && <Card>
                         <div className="flex items-center justify-between mb-3">
                             <h2 className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
                                 Documents {company.documents?.length > 0 && `(${company.documents.length})`}
@@ -1067,7 +1324,7 @@ export const CompanyDetail: React.FC = () => {
                                 )}
                             </div>
                         )}
-                    </Card>
+                    </Card>}
 
                     {/* Quick actions */}
                     <Card className="bg-muted/50 border-0">
@@ -1384,6 +1641,103 @@ export const CompanyDetail: React.FC = () => {
                     </div>
                 </>
             )}
+
+            {/* Project Creation Modal */}
+            {showProjectModal && (
+                <>
+                    <div className="fixed inset-0 z-50 bg-black/50" onClick={() => setShowProjectModal(false)} />
+                    <div className="fixed inset-x-4 top-[10%] z-50 mx-auto max-w-lg bg-background border rounded-xl shadow-xl overflow-hidden">
+                        <div className="flex items-center justify-between px-5 py-4 border-b">
+                            <div className="flex items-center gap-2">
+                                <FolderKanban className="h-5 w-5 text-primary" />
+                                <h2 className="font-medium">Nouveau projet — {company.name}</h2>
+                            </div>
+                            <button onClick={() => setShowProjectModal(false)} className="p-1 hover:bg-muted rounded">
+                                <X className="h-4 w-4" />
+                            </button>
+                        </div>
+                        <div className="p-5 space-y-4">
+                            <div>
+                                <label className="text-sm font-medium mb-1.5 block">Nom du projet</label>
+                                <input value={projectForm.title} onChange={e => setProjectForm(f => ({ ...f, title: e.target.value }))}
+                                    className="w-full px-3 py-2 rounded-lg border border-input bg-background text-sm" placeholder="Ex: Déploiement CRM, Audit SI..." />
+                            </div>
+                            <div>
+                                <label className="text-sm font-medium mb-1.5 block">Description</label>
+                                <textarea value={projectForm.description} onChange={e => setProjectForm(f => ({ ...f, description: e.target.value }))}
+                                    className="w-full px-3 py-2 rounded-lg border border-input bg-background text-sm resize-none" rows={2} placeholder="Description du projet..." />
+                            </div>
+                            <div className="grid grid-cols-2 gap-3">
+                                <div>
+                                    <label className="text-sm font-medium mb-1.5 block">Budget (€)</label>
+                                    <input type="number" value={projectForm.budget} onChange={e => setProjectForm(f => ({ ...f, budget: parseFloat(e.target.value) || 0 }))}
+                                        className="w-full px-3 py-2 rounded-lg border border-input bg-background text-sm" />
+                                </div>
+                                <div>
+                                    <label className="text-sm font-medium mb-1.5 block">Probabilité (%)</label>
+                                    <input type="number" min="0" max="100" value={projectForm.probability} onChange={e => setProjectForm(f => ({ ...f, probability: parseInt(e.target.value) || 0 }))}
+                                        className="w-full px-3 py-2 rounded-lg border border-input bg-background text-sm" />
+                                </div>
+                            </div>
+                            <div className="grid grid-cols-2 gap-3">
+                                <div>
+                                    <label className="text-sm font-medium mb-1.5 block">Étape pipeline</label>
+                                    <select value={projectForm.stage} onChange={e => setProjectForm(f => ({ ...f, stage: e.target.value as DealStage }))}
+                                        className="w-full px-3 py-2 rounded-lg border border-input bg-background text-sm">
+                                        <option value="qualification">Qualification</option>
+                                        <option value="proposal">Proposition</option>
+                                        <option value="negotiation">Négociation</option>
+                                        <option value="closed_won">Gagné</option>
+                                        <option value="closed_lost">Perdu</option>
+                                    </select>
+                                </div>
+                                <div>
+                                    <label className="text-sm font-medium mb-1.5 block">Date closing estimée</label>
+                                    <input type="date" value={projectForm.expectedCloseDate} onChange={e => setProjectForm(f => ({ ...f, expectedCloseDate: e.target.value }))}
+                                        className="w-full px-3 py-2 rounded-lg border border-input bg-background text-sm" />
+                                </div>
+                            </div>
+                            <div>
+                                <label className="text-sm font-medium mb-1.5 block">Responsable</label>
+                                <select value={projectForm.ownerId} onChange={e => setProjectForm(f => ({ ...f, ownerId: e.target.value }))}
+                                    className="w-full px-3 py-2 rounded-lg border border-input bg-background text-sm">
+                                    {LEXIA_TEAM.map(m => <option key={m.id} value={m.id}>{m.name}</option>)}
+                                </select>
+                            </div>
+                        </div>
+                        <div className="flex justify-end gap-2 px-5 py-4 border-t bg-muted/30">
+                            <button onClick={() => setShowProjectModal(false)} className="px-4 py-2 text-sm border border-border rounded-lg hover:bg-muted">Annuler</button>
+                            <button 
+                                disabled={!projectForm.title}
+                                onClick={async () => {
+                                    await workspaceService.addProject({
+                                        companyId: company.id,
+                                        companyName: company.name,
+                                        title: projectForm.title,
+                                        description: projectForm.description,
+                                        budget: projectForm.budget,
+                                        spent: 0,
+                                        currency: 'EUR',
+                                        stage: projectForm.stage,
+                                        probability: projectForm.probability,
+                                        expectedCloseDate: projectForm.expectedCloseDate,
+                                        status: 'active',
+                                        progress: 0,
+                                        ownerId: projectForm.ownerId,
+                                    });
+                                    setShowProjectModal(false);
+                                    setProjectForm({ title: '', description: '', budget: 0, probability: 50, stage: 'qualification', expectedCloseDate: '', ownerId: 'mathis' });
+                                    if (id) loadCompanyProjects(id);
+                                }}
+                                className="px-4 py-2 text-sm bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 disabled:opacity-50 font-medium"
+                            >
+                                Créer le projet
+                            </button>
+                        </div>
+                    </div>
+                </>
+            )}
+
 
             {/* Schedule Meeting Modal */}
             <ScheduleMeetingModal

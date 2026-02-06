@@ -56,7 +56,7 @@ export const PriorityBadge: React.FC<{ priority: Priority }> = ({ priority }) =>
 export const TypeBadge: React.FC<{ type: CompanyType }> = ({ type }) => {
   const colors: Record<string, string> = {
     'PME': "bg-blue-500/10 text-blue-600 border-blue-500/20 dark:text-blue-400",
-    'GE/ETI': "bg-violet-500/10 text-violet-600 border-violet-500/20 dark:text-violet-400",
+    'GE/ETI': "bg-orange-500/10 text-orange-600 border-orange-500/20 dark:text-orange-400",
     'Public Services': "bg-emerald-500/10 text-emerald-600 border-emerald-500/20 dark:text-emerald-400",
   };
 
@@ -101,7 +101,7 @@ export const StageBadge: React.FC<{ stage: string }> = ({ stage }) => {
   const config: Record<string, { label: string; className: string }> = {
     'entry_point': { label: 'Entrée', className: 'bg-slate-500/10 text-slate-600 border-slate-500/20' },
     'exchange': { label: 'Échange', className: 'bg-blue-500/10 text-blue-600 border-blue-500/20' },
-    'proposal': { label: 'Proposition', className: 'bg-violet-500/10 text-violet-600 border-violet-500/20' },
+    'proposal': { label: 'Proposition', className: 'bg-orange-500/10 text-orange-600 border-orange-500/20' },
     'validation': { label: 'Validation', className: 'bg-amber-500/10 text-amber-600 border-amber-500/20' },
     'client_success': { label: 'Client', className: 'bg-emerald-500/10 text-emerald-600 border-emerald-500/20' },
   };

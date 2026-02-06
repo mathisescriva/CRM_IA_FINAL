@@ -8,12 +8,14 @@ import { useNavigate } from 'react-router-dom';
 import { 
     CheckCircle2, Circle, Clock, AlertCircle, Plus, LayoutGrid, List,
     Building2, Calendar, Search, X, Trash2, Users,
-    Sparkles
+    Sparkles, MessageCircle
 } from 'lucide-react';
 import { workspaceService, Task } from '../services/workspace';
 import { authService, LEXIA_TEAM } from '../services/auth';
 import { useApp } from '../contexts/AppContext';
-import { cn, getInitials } from '../lib/utils';
+import { cn, getInitials, formatRelativeTime } from '../lib/utils';
+import { MentionInput } from '../components/MentionInput';
+import { TaskComment } from '../types';
 
 // Shadcn UI Components
 import { Button } from '../components/ui/Button';
@@ -42,6 +44,7 @@ export const Tasks: React.FC = () => {
     const [searchQuery, setSearchQuery] = useState('');
     const [showOnlyMine, setShowOnlyMine] = useState(false);
     const [draggedTask, setDraggedTask] = useState<Task | null>(null);
+    const [selectedTask, setSelectedTask] = useState<Task | null>(null);
 
     useEffect(() => {
         loadTasks();
@@ -55,18 +58,18 @@ export const Tasks: React.FC = () => {
         };
     }, []);
 
-    const loadTasks = () => {
-        setTasks(workspaceService.getTasks());
+    const loadTasks = async () => {
+        setTasks(await workspaceService.getTasks());
     };
 
-    const handleStatusChange = (taskId: string, newStatus: TaskStatus) => {
-        workspaceService.updateTask(taskId, { status: newStatus });
+    const handleStatusChange = async (taskId: string, newStatus: TaskStatus) => {
+        await workspaceService.updateTask(taskId, { status: newStatus });
         loadTasks();
     };
 
-    const handleDelete = (taskId: string) => {
+    const handleDelete = async (taskId: string) => {
         if (confirm('Supprimer cette tâche ?')) {
-            workspaceService.deleteTask(taskId);
+            await workspaceService.deleteTask(taskId);
             loadTasks();
         }
     };
@@ -197,6 +200,7 @@ export const Tasks: React.FC = () => {
                     onStatusChange={handleStatusChange}
                     onDelete={handleDelete}
                     onNavigate={navigate}
+                    onSelect={setSelectedTask}
                     onDragStart={handleDragStart}
                     onDragOver={handleDragOver}
                     onDrop={handleDrop}
@@ -209,6 +213,17 @@ export const Tasks: React.FC = () => {
                     onStatusChange={handleStatusChange}
                     onDelete={handleDelete}
                     onNavigate={navigate}
+                    onSelect={setSelectedTask}
+                />
+            )}
+
+            {/* Task Detail Modal */}
+            {selectedTask && (
+                <TaskDetailModal
+                    task={selectedTask}
+                    onClose={() => setSelectedTask(null)}
+                    onStatusChange={(id, status) => { handleStatusChange(id, status); setSelectedTask(null); }}
+                    onDelete={(id) => { handleDelete(id); setSelectedTask(null); }}
                 />
             )}
         </div>
@@ -222,11 +237,12 @@ const KanbanView: React.FC<{
     onStatusChange: (id: string, status: TaskStatus) => void;
     onDelete: (id: string) => void;
     onNavigate: (path: string) => void;
+    onSelect: (task: Task) => void;
     onDragStart: (task: Task) => void;
     onDragOver: (e: React.DragEvent) => void;
     onDrop: (status: TaskStatus) => void;
     draggedTask: Task | null;
-}> = ({ tasksByStatus, currentUserId, onStatusChange, onDelete, onNavigate, onDragStart, onDragOver, onDrop, draggedTask }) => {
+}> = ({ tasksByStatus, currentUserId, onStatusChange, onDelete, onNavigate, onSelect, onDragStart, onDragOver, onDrop, draggedTask }) => {
     return (
         <div className="flex-1 grid grid-cols-3 gap-4 min-h-0">
             {COLUMNS.map(column => {
@@ -271,6 +287,7 @@ const KanbanView: React.FC<{
                                                 onStatusChange={onStatusChange}
                                                 onDelete={onDelete}
                                                 onNavigate={onNavigate}
+                                                onSelect={onSelect}
                                                 onDragStart={onDragStart}
                                                 viewMode="kanban"
                                             />
@@ -293,7 +310,8 @@ const ListView: React.FC<{
     onStatusChange: (id: string, status: TaskStatus) => void;
     onDelete: (id: string) => void;
     onNavigate: (path: string) => void;
-}> = ({ tasks, currentUserId, onStatusChange, onDelete, onNavigate }) => {
+    onSelect: (task: Task) => void;
+}> = ({ tasks, currentUserId, onStatusChange, onDelete, onNavigate, onSelect }) => {
     // Sort: own tasks first, then by priority, then by status
     const sortedTasks = [...tasks].sort((a, b) => {
         // Own tasks first (handle legacy string format)
@@ -337,6 +355,7 @@ const ListView: React.FC<{
                                     onStatusChange={onStatusChange}
                                     onDelete={onDelete}
                                     onNavigate={onNavigate}
+                                    onSelect={onSelect}
                                     viewMode="list"
                                 />
                             );
@@ -408,9 +427,10 @@ const TaskCard: React.FC<{
     onStatusChange: (id: string, status: TaskStatus) => void;
     onDelete: (id: string) => void;
     onNavigate: (path: string) => void;
+    onSelect?: (task: Task) => void;
     onDragStart?: (task: Task) => void;
     viewMode: 'kanban' | 'list';
-}> = ({ task, isOwn, onStatusChange, onDelete, onNavigate, onDragStart, viewMode }) => {
+}> = ({ task, isOwn, onStatusChange, onDelete, onNavigate, onSelect, onDragStart, viewMode }) => {
     const [showActions, setShowActions] = useState(false);
     const isCompleted = task.status === 'completed';
     const isOverdue = task.dueDate && new Date(task.dueDate) < new Date() && !isCompleted;
@@ -465,9 +485,9 @@ const TaskCard: React.FC<{
                         >
                             {isCompleted && <CheckCircle2 className="h-3 w-3" />}
                         </button>
-                        <div className="flex-1 min-w-0">
+                        <div className="flex-1 min-w-0" onClick={() => onSelect?.(task)}>
                             <p className={cn(
-                                "font-medium text-sm leading-tight line-clamp-2",
+                                "font-medium text-sm leading-tight line-clamp-2 cursor-pointer hover:text-primary transition-colors",
                                 isCompleted && "line-through text-muted-foreground"
                             )}>
                                 {task.title}
@@ -564,10 +584,10 @@ const TaskCard: React.FC<{
             </button>
 
             {/* Content */}
-            <div className="flex-1 min-w-0">
+            <div className="flex-1 min-w-0 cursor-pointer" onClick={() => onSelect?.(task)}>
                 <div className="flex items-center gap-2 mb-0.5">
                     <p className={cn(
-                        "font-medium truncate",
+                        "font-medium truncate hover:text-primary transition-colors",
                         isCompleted && "line-through text-muted-foreground"
                     )}>
                         {task.title}
@@ -639,6 +659,145 @@ const TaskCard: React.FC<{
             >
                 <Trash2 className="h-4 w-4" />
             </Button>
+        </div>
+    );
+};
+
+// Render @mention-highlighted text
+const renderMentionText = (text: string) => {
+    const parts = text.split(/(@\w+)/g);
+    return parts.map((part, i) => {
+        if (part.startsWith('@')) {
+            const name = part.slice(1);
+            const member = LEXIA_TEAM.find(m => m.name.toLowerCase() === name.toLowerCase() || m.id.toLowerCase() === name.toLowerCase());
+            if (member) {
+                return (
+                    <span key={i} className="inline-flex items-center gap-0.5 px-1 py-0.5 rounded bg-primary/10 text-primary text-xs font-medium">
+                        {member.name}
+                    </span>
+                );
+            }
+        }
+        return <span key={i}>{part}</span>;
+    });
+};
+
+// Task Detail Modal with @mention Comments
+const TaskDetailModal: React.FC<{
+    task: Task;
+    onClose: () => void;
+    onStatusChange: (id: string, status: TaskStatus) => void;
+    onDelete: (id: string) => void;
+}> = ({ task, onClose, onStatusChange, onDelete }) => {
+    const [comments, setComments] = useState<TaskComment[]>([]);
+    const [commentText, setCommentText] = useState('');
+    const [commentMentions, setCommentMentions] = useState<string[]>([]);
+    const [loadingComments, setLoadingComments] = useState(true);
+
+    useEffect(() => { loadComments(); }, [task.id]);
+
+    const loadComments = async () => {
+        const c = await workspaceService.getTaskComments(task.id);
+        setComments(c);
+        setLoadingComments(false);
+    };
+
+    const handleAddComment = async () => {
+        if (!commentText.trim()) return;
+        await workspaceService.addTaskComment(task.id, commentText.trim(), commentMentions);
+        setCommentText('');
+        setCommentMentions([]);
+        loadComments();
+    };
+
+    const assignedArray = Array.isArray(task.assignedTo) ? task.assignedTo : [task.assignedTo];
+
+    return (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm" onClick={onClose}>
+            <div className="bg-card border border-border rounded-xl shadow-xl w-full max-w-lg max-h-[85vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+                <div className="p-5 border-b border-border">
+                    <div className="flex items-start justify-between mb-3">
+                        <h2 className="text-lg font-semibold pr-4">{task.title}</h2>
+                        <button onClick={onClose}><X className="h-5 w-5 text-muted-foreground" /></button>
+                    </div>
+                    {task.description && <p className="text-sm text-muted-foreground mb-3">{task.description}</p>}
+                    <div className="flex flex-wrap gap-2 text-xs">
+                        <span className={cn("px-2 py-1 rounded-full font-medium",
+                            task.priority === 'high' ? "bg-red-500/10 text-red-500" :
+                            task.priority === 'medium' ? "bg-orange-500/10 text-orange-500" :
+                            "bg-muted text-muted-foreground"
+                        )}>{task.priority}</span>
+                        <span className={cn("px-2 py-1 rounded-full font-medium",
+                            task.status === 'completed' ? "bg-green-500/10 text-green-500" :
+                            task.status === 'in_progress' ? "bg-blue-500/10 text-blue-500" :
+                            "bg-muted text-muted-foreground"
+                        )}>{task.status === 'pending' ? 'A faire' : task.status === 'in_progress' ? 'En cours' : 'Terminée'}</span>
+                        {task.companyName && <span className="px-2 py-1 rounded-full bg-muted text-muted-foreground">{task.companyName}</span>}
+                        {task.dueDate && <span className="px-2 py-1 rounded-full bg-muted text-muted-foreground flex items-center gap-1"><Calendar className="h-3 w-3" />{new Date(task.dueDate).toLocaleDateString('fr-FR')}</span>}
+                    </div>
+                    <div className="flex items-center gap-2 mt-3">
+                        <span className="text-xs text-muted-foreground">Assignée à:</span>
+                        <ContributorsAvatars assignedTo={assignedArray} />
+                    </div>
+                </div>
+
+                {/* Comments with @mentions */}
+                <div className="p-5">
+                    <div className="flex items-center gap-2 mb-3">
+                        <MessageCircle className="h-4 w-4 text-muted-foreground" />
+                        <h3 className="text-sm font-medium">Commentaires</h3>
+                        {comments.length > 0 && <span className="text-xs text-muted-foreground bg-muted px-1.5 py-0.5 rounded-full">{comments.length}</span>}
+                    </div>
+
+                    {/* Comment input - chat style */}
+                    <div className="mb-4">
+                        <MentionInput
+                            value={commentText}
+                            onChange={(text, mentions) => { setCommentText(text); setCommentMentions(mentions); }}
+                            onSubmit={handleAddComment}
+                            placeholder="Commenter... Entrée pour envoyer, @ pour mentionner"
+                            className="text-sm bg-muted/30"
+                        />
+                    </div>
+
+                    {loadingComments ? (
+                        <p className="text-sm text-muted-foreground text-center py-4">Chargement...</p>
+                    ) : comments.length === 0 ? (
+                        <p className="text-sm text-muted-foreground text-center py-4">Aucun commentaire encore</p>
+                    ) : (
+                        <div className="space-y-3">
+                            {comments.map(c => {
+                                const member = LEXIA_TEAM.find(m => m.id === c.userId);
+                                return (
+                                    <div key={c.id} className="flex gap-2.5">
+                                        <Avatar className="h-7 w-7 shrink-0 mt-0.5">
+                                            {(member?.avatarUrl || c.userAvatar) && <AvatarImage src={member?.avatarUrl || c.userAvatar} />}
+                                            <AvatarFallback className="text-[9px]">{getInitials(c.userName)}</AvatarFallback>
+                                        </Avatar>
+                                        <div className="flex-1 min-w-0">
+                                            <div className="flex items-center gap-1.5 mb-0.5">
+                                                <span className="text-xs font-semibold">{c.userName}</span>
+                                                <span className="text-[10px] text-muted-foreground">{formatRelativeTime(c.createdAt)}</span>
+                                            </div>
+                                            <div className="text-sm leading-relaxed whitespace-pre-wrap">{renderMentionText(c.content)}</div>
+                                        </div>
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    )}
+                </div>
+
+                {/* Actions */}
+                <div className="p-4 border-t border-border flex justify-between">
+                    <button onClick={() => { onDelete(task.id); onClose(); }} className="text-sm text-destructive hover:underline">Supprimer</button>
+                    <div className="flex gap-2">
+                        {task.status !== 'completed' && (
+                            <button onClick={() => onStatusChange(task.id, 'completed')} className="px-3 py-1.5 bg-green-500 text-white rounded-lg text-sm font-medium">Marquer terminée</button>
+                        )}
+                    </div>
+                </div>
+            </div>
         </div>
     );
 };

@@ -8,7 +8,8 @@ import { useNavigate } from 'react-router-dom';
 import { 
     Mail, Phone, Calendar, Clock, CheckCircle2, AlertCircle,
     ArrowRight, Building2, User, MessageSquare, FileSignature,
-    Plus, ChevronRight, Sparkles, Video, MapPin
+    Plus, ChevronRight, Sparkles, Video, MapPin, AtSign, FolderKanban,
+    Users, Zap
 } from 'lucide-react';
 import { authService } from '../services/auth';
 import { workspaceService, Task, TeamActivity } from '../services/workspace';
@@ -18,6 +19,7 @@ import { companyService } from '../services/supabase';
 import { useApp } from '../contexts/AppContext';
 import { cn, getInitials, formatRelativeTime } from '../lib/utils';
 import { Company } from '../types';
+import { DashboardSkeleton } from '../components/ui/Skeleton';
 
 interface GoogleCalendarEvent {
     id: string;
@@ -40,26 +42,50 @@ const Dashboard: React.FC = () => {
     const [events, setEvents] = useState<GoogleCalendarEvent[]>([]);
     const [activity, setActivity] = useState<TeamActivity[]>([]);
     const [urgentClients, setUrgentClients] = useState<Company[]>([]);
+    const [mentions, setMentions] = useState<{
+        id: string; projectId: string; projectTitle: string; companyName: string;
+        content: string; authorId: string; authorName: string; authorAvatar?: string;
+        createdAt: string; noteType: string; source: string; taskTitle?: string; link?: string;
+    }[]>([]);
+    const [teamPulse, setTeamPulse] = useState<{
+        userId: string; userName: string; userAvatar?: string;
+        lastAction?: string; lastActionTime?: string; activeTaskCount: number;
+    }[]>([]);
     const [loading, setLoading] = useState(true);
     const [isCalendarConnected, setIsCalendarConnected] = useState(false);
 
     useEffect(() => {
         loadGoogleServices();
         const loadData = async () => {
-            setTasks(workspaceService.getMyTasks());
-            setActivity(workspaceService.getRecentActivity(5));
-            setUrgentClients(await workspaceService.getUrgentClients());
+            const [myTasks, recentActivity, urgent, myMentions, pulse] = await Promise.all([
+                workspaceService.getMyTasks(),
+                workspaceService.getRecentActivity(5),
+                workspaceService.getUrgentClients(),
+                workspaceService.getMyMentions(),
+                workspaceService.getTeamPulse(),
+            ]);
+            setTasks(myTasks);
+            setActivity(recentActivity);
+            setUrgentClients(urgent);
+            setMentions(myMentions);
+            setTeamPulse(pulse);
             setLoading(false);
         };
         loadData();
 
         // Listen for updates
-        const handleUpdate = () => {
-            setActivity(workspaceService.getRecentActivity(5));
-            setTasks(workspaceService.getMyTasks());
+        const handleUpdate = async () => {
+            setActivity(await workspaceService.getRecentActivity(5));
+            setTasks(await workspaceService.getMyTasks());
+            setMentions(await workspaceService.getMyMentions());
+            setTeamPulse(await workspaceService.getTeamPulse());
         };
         window.addEventListener('activity-update', handleUpdate);
-        return () => window.removeEventListener('activity-update', handleUpdate);
+        window.addEventListener('projects-update', handleUpdate);
+        return () => {
+            window.removeEventListener('activity-update', handleUpdate);
+            window.removeEventListener('projects-update', handleUpdate);
+        };
     }, []);
 
     const loadGoogleServices = async () => {
@@ -139,11 +165,7 @@ const Dashboard: React.FC = () => {
     });
 
     if (loading) {
-        return (
-            <div className="flex items-center justify-center min-h-[60vh]">
-                <div className="animate-pulse text-muted-foreground">Chargement...</div>
-            </div>
-        );
+        return <DashboardSkeleton />;
     }
 
     return (
@@ -186,8 +208,8 @@ const Dashboard: React.FC = () => {
                 />
                 <QuickStat 
                     label="Équipe active" 
-                    value={3}
-                    subtext="En ligne"
+                    value={teamPulse.filter(m => m.lastAction).length || teamPulse.length}
+                    subtext={`${teamPulse.reduce((sum, m) => sum + m.activeTaskCount, 0)} tâches actives`}
                     success
                 />
             </div>
@@ -215,6 +237,65 @@ const Dashboard: React.FC = () => {
                             </div>
                         )}
                     </Section>
+
+                    {/* Mentions - subjects where user is @mentioned */}
+                    {mentions.length > 0 && (
+                        <Section 
+                            title="Vos mentions" 
+                            count={mentions.length}
+                            action={{ label: 'Voir tout', onClick: () => navigate('/projects') }}
+                        >
+                            <div className="space-y-2">
+                                {mentions.slice(0, 5).map(mention => (
+                                    <button
+                                        key={mention.id}
+                                        onClick={() => navigate(mention.link || `/projects?id=${mention.projectId}`)}
+                                        className="w-full flex items-start gap-3 p-3 rounded-lg border border-border hover:bg-muted/50 transition-colors text-left group"
+                                    >
+                                        <div className="h-8 w-8 rounded-full overflow-hidden bg-muted shrink-0 mt-0.5">
+                                            {mention.authorAvatar ? (
+                                                <img src={mention.authorAvatar} alt={mention.authorName} className="h-full w-full object-cover" />
+                                            ) : (
+                                                <div className="h-full w-full flex items-center justify-center text-[10px] font-bold text-muted-foreground">
+                                                    {getInitials(mention.authorName)}
+                                                </div>
+                                            )}
+                                        </div>
+                                        <div className="flex-1 min-w-0">
+                                            <div className="flex items-center gap-2 mb-0.5">
+                                                <span className="text-sm font-medium">{mention.authorName}</span>
+                                                {mention.source === 'task_comment' && (
+                                                    <span className="text-[10px] px-1.5 py-0.5 rounded bg-blue-500/10 text-blue-600 font-medium">tâche</span>
+                                                )}
+                                                <span className="text-[10px] text-muted-foreground">{formatRelativeTime(mention.createdAt)}</span>
+                                            </div>
+                                            <p className="text-sm text-muted-foreground line-clamp-2">{mention.content}</p>
+                                            <div className="flex items-center gap-1.5 mt-1.5">
+                                                {mention.source === 'task_comment' && mention.taskTitle ? (
+                                                    <>
+                                                        <CheckCircle2 className="h-3 w-3 text-muted-foreground/60" />
+                                                        <span className="text-xs text-muted-foreground">{mention.taskTitle}</span>
+                                                    </>
+                                                ) : (
+                                                    <>
+                                                        <FolderKanban className="h-3 w-3 text-muted-foreground/60" />
+                                                        <span className="text-xs text-muted-foreground">{mention.projectTitle}</span>
+                                                    </>
+                                                )}
+                                                {mention.companyName && (
+                                                    <>
+                                                        <span className="text-muted-foreground/30">·</span>
+                                                        <span className="text-xs text-muted-foreground">{mention.companyName}</span>
+                                                    </>
+                                                )}
+                                            </div>
+                                        </div>
+                                        <AtSign className="h-4 w-4 text-primary/40 group-hover:text-primary/70 transition-colors shrink-0 mt-0.5" />
+                                    </button>
+                                ))}
+                            </div>
+                        </Section>
+                    )}
 
                     {/* Urgent Clients */}
                     {urgentClients.length > 0 && (
@@ -397,8 +478,50 @@ const Dashboard: React.FC = () => {
                         )}
                     </Section>
 
-                    {/* Team Activity */}
-                    <Section title="Activité équipe">
+                    {/* Team Pulse */}
+                    <Section title="Équipe" icon={<Users className="h-4 w-4" />}>
+                        <div className="space-y-2">
+                            {teamPulse.map(member => (
+                                <div key={member.userId} className="flex items-center gap-3 p-2.5 rounded-lg hover:bg-muted/50 transition-colors">
+                                    <div className="relative">
+                                        <div className="h-9 w-9 rounded-full overflow-hidden bg-muted shrink-0">
+                                            {member.userAvatar ? (
+                                                <img src={member.userAvatar} alt={member.userName} className="h-full w-full object-cover" />
+                                            ) : (
+                                                <div className="h-full w-full flex items-center justify-center text-xs font-bold text-muted-foreground">
+                                                    {getInitials(member.userName)}
+                                                </div>
+                                            )}
+                                        </div>
+                                        <div className="absolute -bottom-0.5 -right-0.5 h-3 w-3 rounded-full bg-green-500 border-2 border-background" />
+                                    </div>
+                                    <div className="flex-1 min-w-0">
+                                        <p className="text-sm font-medium truncate">{member.userName}</p>
+                                        {member.lastAction ? (
+                                            <p className="text-xs text-muted-foreground truncate">{member.lastAction}</p>
+                                        ) : (
+                                            <p className="text-xs text-muted-foreground/50">Aucune activité récente</p>
+                                        )}
+                                    </div>
+                                    <div className="flex flex-col items-end gap-0.5 shrink-0">
+                                        {member.activeTaskCount > 0 && (
+                                            <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-primary/10 text-primary font-medium">
+                                                {member.activeTaskCount} tâche{member.activeTaskCount > 1 ? 's' : ''}
+                                            </span>
+                                        )}
+                                        {member.lastActionTime && (
+                                            <span className="text-[10px] text-muted-foreground">
+                                                {formatRelativeTime(member.lastActionTime)}
+                                            </span>
+                                        )}
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    </Section>
+
+                    {/* Recent Activity */}
+                    <Section title="Activité récente">
                         <div className="space-y-3">
                             {activity.map(act => {
                                 const Icon = getActivityIcon(act.action);
@@ -483,12 +606,14 @@ const Section: React.FC<{
     title: string;
     count?: number;
     alert?: boolean;
+    icon?: React.ReactNode;
     action?: { label: string; onClick: () => void };
     children: React.ReactNode;
-}> = ({ title, count, alert, action, children }) => (
+}> = ({ title, count, alert, icon, action, children }) => (
     <div className="space-y-3">
         <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
+                {icon && <span className="text-muted-foreground">{icon}</span>}
                 <h2 className="text-sm font-medium">{title}</h2>
                 {count !== undefined && (
                     <span className={cn(
