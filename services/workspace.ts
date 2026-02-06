@@ -7,17 +7,24 @@ import { authService, LEXIA_TEAM } from './auth';
 import { companyService } from './supabase';
 import { Company, Deal, EmailTemplate, TaskComment, Project, ProjectDocument, ProjectMember, ProjectNote, ProjectStatus } from '../types';
 
-const API_URL = 'http://127.0.0.1:3001';
+// PostgREST API URL — Supabase REST or local PostgREST
+const API_URL = import.meta.env.VITE_API_URL || 'http://127.0.0.1:3001';
+const API_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY || '';
 
 // Helper for API calls (same as supabase.ts)
 async function api<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
+    const headers: Record<string, string> = {
+        'Content-Type': 'application/json',
+        'Prefer': 'return=representation',
+        ...(options.headers as Record<string, string>),
+    };
+    if (API_KEY) {
+        headers['apikey'] = API_KEY;
+        headers['Authorization'] = `Bearer ${API_KEY}`;
+    }
     const response = await fetch(`${API_URL}${endpoint}`, {
         ...options,
-        headers: {
-            'Content-Type': 'application/json',
-            'Prefer': 'return=representation',
-            ...options.headers,
-        },
+        headers,
     });
     if (!response.ok) {
         const error = await response.text();

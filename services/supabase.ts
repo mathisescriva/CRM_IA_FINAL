@@ -7,18 +7,24 @@ import { Company, PipelineStage, Contact, TeamMember, Activity, CompanyDocument,
 import { PIPELINE_COLUMNS } from '../constants';
 import { authService } from './auth';
 
-// PostgREST API URL (local PostgreSQL)
-const API_URL = 'http://127.0.0.1:3001';
+// PostgREST API URL — Supabase REST or local PostgREST
+const API_URL = import.meta.env.VITE_API_URL || 'http://127.0.0.1:3001';
+const API_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY || '';
 
 // Helper for API calls
 async function api<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
+    const headers: Record<string, string> = {
+        'Content-Type': 'application/json',
+        'Prefer': 'return=representation',
+        ...(options.headers as Record<string, string>),
+    };
+    if (API_KEY) {
+        headers['apikey'] = API_KEY;
+        headers['Authorization'] = `Bearer ${API_KEY}`;
+    }
     const response = await fetch(`${API_URL}${endpoint}`, {
         ...options,
-        headers: {
-            'Content-Type': 'application/json',
-            'Prefer': 'return=representation',
-            ...options.headers,
-        },
+        headers,
     });
     
     if (!response.ok) {
