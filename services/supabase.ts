@@ -5,7 +5,7 @@
 
 import { Company, PipelineStage, Contact, TeamMember, Activity, CompanyDocument, ChecklistItem, EntityType, PartnerType, CompanyType, Priority, Gender } from '../types';
 import { PIPELINE_COLUMNS } from '../constants';
-import { authService } from './auth';
+import { authService, resolveTeamAvatar } from './auth';
 
 // PostgREST API URL — Supabase REST or local PostgREST
 const API_URL = import.meta.env.VITE_API_URL || 'http://127.0.0.1:3001';
@@ -104,11 +104,15 @@ function mapDbToDocument(row: any): CompanyDocument {
 }
 
 function mapDbToTeamMember(row: any): TeamMember {
+    const id = row.id || row.user_id;
+    // Always resolve avatar from LEXIA_TEAM (custom avatars in localStorage)
+    // instead of trusting the DB-stored avatar_url which may be stale
+    const freshAvatar = resolveTeamAvatar(row.email || row.name || id);
     return {
-        id: row.id || row.user_id,
+        id,
         name: row.name,
         role: row.role,
-        avatarUrl: row.avatar_url,
+        avatarUrl: freshAvatar || row.avatar_url,
         email: row.email,
     };
 }
@@ -357,7 +361,7 @@ class PostgresService {
                 avatar_url: contactData.avatarUrl,
                 linkedin_url: contactData.linkedinUrl,
                 is_main_contact: contactData.isMainContact || false,
-                gender: contactData.gender || 'not_specified',
+                gender: contactData.gender && ['male', 'female', 'other'].includes(contactData.gender) ? contactData.gender : 'other',
             }),
         });
         

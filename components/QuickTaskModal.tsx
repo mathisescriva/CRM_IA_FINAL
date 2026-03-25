@@ -3,7 +3,7 @@
  */
 
 import React, { useState, useEffect, useRef } from 'react';
-import { X, Building2, Calendar, Flag, Sparkles, Check, ChevronDown, Search, FolderKanban } from 'lucide-react';
+import { X, Building2, Calendar, Flag, Sparkles, Check, ChevronDown, Search, FolderKanban, Plus } from 'lucide-react';
 import { workspaceService, Task } from '../services/workspace';
 import { companyService } from '../services/supabase';
 import { authService, LEXIA_TEAM } from '../services/auth';
@@ -31,6 +31,8 @@ export const QuickTaskModal: React.FC<QuickTaskModalProps> = ({
     const [showCompanyDropdown, setShowCompanyDropdown] = useState(false);
     const [showProjectDropdown, setShowProjectDropdown] = useState(false);
     const [companySearch, setCompanySearch] = useState('');
+    const [isCreatingCompany, setIsCreatingCompany] = useState(false);
+    const [newCompanyName, setNewCompanyName] = useState('');
     const assigneeRef = useRef<HTMLDivElement>(null);
     const companyRef = useRef<HTMLDivElement>(null);
     const projectRef = useRef<HTMLDivElement>(null);
@@ -166,9 +168,9 @@ export const QuickTaskModal: React.FC<QuickTaskModalProps> = ({
     ];
 
     const priorityConfig = {
-        low: { label: 'Basse', color: 'bg-emerald-500', ring: 'ring-emerald-500' },
-        medium: { label: 'Moyenne', color: 'bg-amber-500', ring: 'ring-amber-500' },
-        high: { label: 'Haute', color: 'bg-red-500', ring: 'ring-red-500' }
+        low: { label: 'Basse', ring: 'ring-foreground/30' },
+        medium: { label: 'Moyenne', ring: 'ring-foreground/50' },
+        high: { label: 'Haute', ring: 'ring-foreground' }
     };
 
     const isProjectLocked = !!defaultProjectId;
@@ -176,7 +178,7 @@ export const QuickTaskModal: React.FC<QuickTaskModalProps> = ({
     return (
         <>
             <div 
-                className="fixed inset-0 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200"
+                className="fixed inset-0 bg-black/50 backdrop-blur-sm animate-in fade-in duration-200"
                 style={{ zIndex: 9998 }}
                 onClick={onClose}
             />
@@ -185,7 +187,7 @@ export const QuickTaskModal: React.FC<QuickTaskModalProps> = ({
                 style={{ zIndex: 9999 }}
                 onClick={(e) => e.stopPropagation()}
             >
-                <div className="bg-background border border-border rounded-2xl shadow-2xl overflow-hidden">
+                <div className="bg-background border border-border rounded-lg shadow-sm overflow-hidden">
                     {/* Header */}
                     <div className="flex items-center justify-between px-5 py-4 border-b border-border bg-gradient-to-r from-primary/5 to-transparent">
                         <div className="flex items-center gap-3">
@@ -216,7 +218,7 @@ export const QuickTaskModal: React.FC<QuickTaskModalProps> = ({
                             value={form.title}
                             onChange={e => setForm(prev => ({ ...prev, title: e.target.value }))}
                             placeholder="Que devez-vous faire ?"
-                            className="w-full px-4 py-3 rounded-xl border-2 border-border bg-muted/30 text-base font-medium placeholder:text-muted-foreground/60 focus:outline-none focus:border-primary focus:bg-background transition-all"
+                            className="w-full px-4 py-3 rounded-lg border-2 border-border bg-muted/30 text-base font-medium placeholder:text-muted-foreground/60 focus:outline-none focus:border-primary focus:bg-background transition-all"
                             autoFocus
                         />
 
@@ -226,7 +228,7 @@ export const QuickTaskModal: React.FC<QuickTaskModalProps> = ({
                             onChange={e => setForm(prev => ({ ...prev, description: e.target.value }))}
                             placeholder="Ajoutez des détails (optionnel)..."
                             rows={2}
-                            className="w-full px-4 py-3 rounded-xl border border-border bg-background text-sm focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/20 resize-none transition-all"
+                            className="w-full px-4 py-3 rounded-lg border border-border bg-background text-sm focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/20 resize-none transition-all"
                         />
 
                         {/* Assignees */}
@@ -257,7 +259,7 @@ export const QuickTaskModal: React.FC<QuickTaskModalProps> = ({
                                             }}
                                             style={{ cursor: 'pointer', position: 'relative', zIndex: 10 }}
                                             className={cn(
-                                                "group relative flex flex-col items-center gap-1.5 p-2 rounded-xl transition-all",
+                                                "group relative flex flex-col items-center gap-1.5 p-2 rounded-lg transition-all",
                                                 isSelected ? "bg-primary/10 ring-2 ring-primary" : "hover:bg-muted"
                                             )}
                                         >
@@ -268,7 +270,7 @@ export const QuickTaskModal: React.FC<QuickTaskModalProps> = ({
                                                     style={{ pointerEvents: 'none' }}
                                                     className={cn(
                                                         "h-12 w-12 rounded-full object-cover border-2 transition-all",
-                                                        isSelected ? "border-primary shadow-lg shadow-primary/20" : "border-transparent group-hover:border-muted-foreground/20"
+                                                        isSelected ? "border-primary shadow-sm" : "border-transparent group-hover:border-muted-foreground/20"
                                                     )}
                                                 />
                                                 {isSelected && (
@@ -296,7 +298,7 @@ export const QuickTaskModal: React.FC<QuickTaskModalProps> = ({
                                     onClick={(e) => { e.stopPropagation(); setShowCompanyDropdown(!showCompanyDropdown); }}
                                     disabled={isProjectLocked}
                                     className={cn(
-                                        "w-full flex items-center gap-2 px-2.5 py-2 rounded-xl border text-left transition-all",
+                                        "w-full flex items-center gap-2 px-2.5 py-2 rounded-lg border text-left transition-all",
                                         showCompanyDropdown ? "border-primary ring-1 ring-primary/20" : "border-border hover:border-muted-foreground/30",
                                         isProjectLocked && "opacity-60 cursor-not-allowed"
                                     )}
@@ -322,7 +324,7 @@ export const QuickTaskModal: React.FC<QuickTaskModalProps> = ({
                                 </button>
 
                                 {showCompanyDropdown && (
-                                    <div className="absolute top-full left-0 right-0 mt-1 bg-background border border-border rounded-xl shadow-xl overflow-hidden" style={{ zIndex: 100 }} onClick={e => e.stopPropagation()}>
+                                    <div className="absolute top-full left-0 right-0 mt-1 bg-background border border-border rounded-lg shadow-sm overflow-hidden" style={{ zIndex: 100 }} onClick={e => e.stopPropagation()}>
                                         <div className="p-2 border-b border-border">
                                             <div className="relative">
                                                 <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground pointer-events-none" />
@@ -343,6 +345,7 @@ export const QuickTaskModal: React.FC<QuickTaskModalProps> = ({
                                                         loadProjectsForCompany(company.id);
                                                         setShowCompanyDropdown(false);
                                                         setCompanySearch('');
+                                                        setIsCreatingCompany(false);
                                                     }}
                                                     className={cn("w-full flex items-center gap-2 px-3 py-2 rounded-lg text-left transition-colors text-sm", form.companyId === company.id ? "bg-primary/10 text-primary" : "hover:bg-muted")}>
                                                     <div className="h-6 w-6 rounded-lg bg-muted flex items-center justify-center overflow-hidden shrink-0">
@@ -352,6 +355,62 @@ export const QuickTaskModal: React.FC<QuickTaskModalProps> = ({
                                                     {form.companyId === company.id && <Check className="h-4 w-4 ml-auto text-primary shrink-0" />}
                                                 </button>
                                             ))}
+                                        </div>
+                                        <div className="border-t border-border p-1">
+                                            {!isCreatingCompany ? (
+                                                <button type="button"
+                                                    onClick={(e) => { e.stopPropagation(); setIsCreatingCompany(true); setNewCompanyName(companySearch || ''); }}
+                                                    className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-left text-sm hover:bg-muted text-muted-foreground font-medium">
+                                                    <Plus className="h-4 w-4" /> Créer une entreprise
+                                                </button>
+                                            ) : (
+                                                <div className="px-3 py-2 space-y-2" onClick={e => e.stopPropagation()}>
+                                                    <input
+                                                        type="text"
+                                                        placeholder="Nom de l'entreprise"
+                                                        value={newCompanyName}
+                                                        onChange={e => setNewCompanyName(e.target.value)}
+                                                        autoFocus
+                                                        className="w-full px-2.5 py-1.5 rounded-lg border border-border bg-background text-sm focus:outline-none focus:border-primary"
+                                                    />
+                                                    <div className="flex gap-2">
+                                                        <button type="button"
+                                                            onClick={() => setIsCreatingCompany(false)}
+                                                            className="flex-1 text-xs py-1.5 rounded-lg hover:bg-muted transition-colors text-muted-foreground">
+                                                            Annuler
+                                                        </button>
+                                                        <button type="button"
+                                                            disabled={!newCompanyName.trim()}
+                                                            onClick={async (e) => {
+                                                                e.stopPropagation();
+                                                                if (!newCompanyName.trim()) return;
+                                                                const created = await companyService.create({
+                                                                    name: newCompanyName.trim(),
+                                                                    type: 'PME',
+                                                                    website: '',
+                                                                    importance: 'medium',
+                                                                    entityType: 'client',
+                                                                });
+                                                                if (created) {
+                                                                    const refreshed = await companyService.getAll();
+                                                                    setCompanies(refreshed);
+                                                                    const found = refreshed.find(c => c.name === newCompanyName.trim());
+                                                                    if (found) {
+                                                                        setForm(prev => ({ ...prev, companyId: found.id, projectId: '' }));
+                                                                        loadProjectsForCompany(found.id);
+                                                                    }
+                                                                }
+                                                                setIsCreatingCompany(false);
+                                                                setNewCompanyName('');
+                                                                setShowCompanyDropdown(false);
+                                                                setCompanySearch('');
+                                                            }}
+                                                            className="flex-1 text-xs py-1.5 rounded-lg bg-foreground text-background font-medium disabled:opacity-50 disabled:cursor-not-allowed transition-opacity">
+                                                            Créer
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                            )}
                                         </div>
                                     </div>
                                 )}
@@ -365,7 +424,7 @@ export const QuickTaskModal: React.FC<QuickTaskModalProps> = ({
                                     onClick={(e) => { e.stopPropagation(); if (form.companyId) setShowProjectDropdown(!showProjectDropdown); }}
                                     disabled={!form.companyId || isProjectLocked}
                                     className={cn(
-                                        "w-full flex items-center gap-2 px-2.5 py-2 rounded-xl border text-left transition-all",
+                                        "w-full flex items-center gap-2 px-2.5 py-2 rounded-lg border text-left transition-all",
                                         showProjectDropdown ? "border-primary ring-1 ring-primary/20" : "border-border hover:border-muted-foreground/30",
                                         (!form.companyId || isProjectLocked) && "opacity-60 cursor-not-allowed"
                                     )}
@@ -387,7 +446,7 @@ export const QuickTaskModal: React.FC<QuickTaskModalProps> = ({
                                 </button>
 
                                 {showProjectDropdown && (
-                                    <div className="absolute top-full left-0 right-0 mt-1 bg-background border border-border rounded-xl shadow-xl overflow-hidden" style={{ zIndex: 100 }} onClick={e => e.stopPropagation()}>
+                                    <div className="absolute top-full left-0 right-0 mt-1 bg-background border border-border rounded-lg shadow-sm overflow-hidden" style={{ zIndex: 100 }} onClick={e => e.stopPropagation()}>
                                         <div className="overflow-y-auto p-1" style={{ maxHeight: '192px', overscrollBehavior: 'contain' }}>
                                             <button type="button" onClick={() => { setForm(prev => ({ ...prev, projectId: '' })); setShowProjectDropdown(false); }}
                                                 className={cn("w-full flex items-center gap-2 px-3 py-2 rounded-lg text-left transition-colors text-sm", !form.projectId ? "bg-primary/10 text-primary" : "hover:bg-muted")}>
@@ -425,7 +484,7 @@ export const QuickTaskModal: React.FC<QuickTaskModalProps> = ({
                                     type="button"
                                     onClick={(e) => { e.stopPropagation(); setShowDatePicker(!showDatePicker); }}
                                     className={cn(
-                                        "w-full flex items-center gap-2 px-2.5 py-2 rounded-xl border text-left transition-all",
+                                        "w-full flex items-center gap-2 px-2.5 py-2 rounded-lg border text-left transition-all",
                                         showDatePicker ? "border-primary ring-1 ring-primary/20" : "border-border hover:border-muted-foreground/30"
                                     )}
                                 >
@@ -435,7 +494,7 @@ export const QuickTaskModal: React.FC<QuickTaskModalProps> = ({
                                 </button>
 
                                 {showDatePicker && (
-                                    <div className="absolute top-full left-0 right-0 mt-1 bg-background border border-border rounded-xl shadow-xl overflow-hidden" style={{ zIndex: 101 }} onClick={e => e.stopPropagation()}>
+                                    <div className="absolute top-full left-0 right-0 mt-1 bg-background border border-border rounded-lg shadow-sm overflow-hidden" style={{ zIndex: 101 }} onClick={e => e.stopPropagation()}>
                                         <div className="overflow-y-auto" style={{ maxHeight: '240px', overscrollBehavior: 'contain' }}>
                                             <div className="p-2 space-y-1">
                                                 {quickDates.map(({ label, value }) => (
@@ -468,11 +527,10 @@ export const QuickTaskModal: React.FC<QuickTaskModalProps> = ({
                                     return (
                                         <button key={p} type="button" onClick={() => setForm(prev => ({ ...prev, priority: p }))}
                                             className={cn(
-                                                "flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-medium border-2 transition-all",
-                                                form.priority === p ? `${config.ring} border-current bg-current/10` : "border-border hover:bg-muted"
-                                            )}
-                                            style={{ color: form.priority === p ? (p === 'high' ? '#ef4444' : p === 'medium' ? '#f59e0b' : '#10b981') : undefined }}>
-                                            <Flag className={cn("h-4 w-4", form.priority === p && config.color.replace('bg-', 'text-'))} />
+                                                "flex-1 flex items-center justify-center gap-2 py-2.5 rounded-lg text-sm font-medium border-2 transition-all",
+                                                form.priority === p ? `${config.ring} border-foreground bg-foreground/5 text-foreground` : "border-border hover:bg-muted text-muted-foreground"
+                                            )}>
+                                            <Flag className="h-4 w-4" />
                                             {config.label}
                                         </button>
                                     );
@@ -482,7 +540,7 @@ export const QuickTaskModal: React.FC<QuickTaskModalProps> = ({
 
                         {/* Summary */}
                         {form.title && (
-                            <div className="p-3 rounded-xl bg-muted/50 border border-border/50">
+                            <div className="p-3 rounded-lg bg-muted/50 border border-border/50">
                                 <p className="text-xs text-muted-foreground mb-1">Résumé</p>
                                 <p className="text-sm">
                                     {selectedAssignees.length === 1 ? (
@@ -503,11 +561,11 @@ export const QuickTaskModal: React.FC<QuickTaskModalProps> = ({
                         {/* Actions */}
                         <div className="flex justify-end gap-3 pt-1">
                             <button type="button" onClick={onClose}
-                                className="px-4 py-2.5 text-sm text-muted-foreground hover:bg-muted rounded-xl transition-colors">
+                                className="px-4 py-2.5 text-sm text-muted-foreground hover:bg-muted rounded-lg transition-colors">
                                 Annuler
                             </button>
                             <button type="submit" disabled={loading || !form.title}
-                                className="px-5 py-2.5 text-sm font-medium bg-primary text-primary-foreground rounded-xl hover:bg-primary/90 transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2">
+                                className="px-5 py-2.5 text-sm font-medium bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2">
                                 {loading ? (
                                     <><span className="h-4 w-4 border-2 border-primary-foreground/30 border-t-primary-foreground rounded-full animate-spin" /> Création...</>
                                 ) : (

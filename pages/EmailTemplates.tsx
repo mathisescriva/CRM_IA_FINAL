@@ -12,11 +12,11 @@ import { cn } from '../lib/utils';
 
 const CATEGORIES: { id: string; label: string; color: string }[] = [
     { id: 'all', label: 'Tous', color: '' },
-    { id: 'introduction', label: 'Introduction', color: 'bg-blue-500/10 text-blue-500' },
-    { id: 'followup', label: 'Relance', color: 'bg-orange-500/10 text-orange-500' },
-    { id: 'proposal', label: 'Proposition', color: 'bg-purple-500/10 text-purple-500' },
-    { id: 'meeting', label: 'Réunion', color: 'bg-green-500/10 text-green-500' },
-    { id: 'onboarding', label: 'Onboarding', color: 'bg-pink-500/10 text-pink-500' },
+    { id: 'introduction', label: 'Introduction', color: 'bg-primary/10 text-primary' },
+    { id: 'followup', label: 'Relance', color: 'bg-destructive/10 text-destructive' },
+    { id: 'proposal', label: 'Proposition', color: 'bg-secondary text-secondary-foreground' },
+    { id: 'meeting', label: 'Réunion', color: 'bg-accent text-accent-foreground' },
+    { id: 'onboarding', label: 'Onboarding', color: 'bg-muted text-foreground' },
     { id: 'general', label: 'Général', color: 'bg-muted text-muted-foreground' },
 ];
 
@@ -111,7 +111,7 @@ const EmailTemplates: React.FC = () => {
                 {filtered.map(tpl => {
                     const cat = CATEGORIES.find(c => c.id === tpl.category);
                     return (
-                        <div key={tpl.id} className="p-4 rounded-xl border border-border bg-card hover:border-primary/30 transition-all group">
+                        <div key={tpl.id} className="p-4 rounded-lg border border-border bg-card hover:border-primary/30 transition-all group">
                             <div className="flex items-start justify-between mb-2">
                                 <div className="flex items-center gap-2">
                                     <Mail className="h-4 w-4 text-primary" />
@@ -141,7 +141,7 @@ const EmailTemplates: React.FC = () => {
             {/* Modal */}
             {showModal && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm" onClick={() => { setShowModal(false); setEditing(null); }}>
-                    <div className="bg-card border border-border rounded-xl shadow-xl w-full max-w-lg p-6 space-y-4 max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+                    <div className="bg-card border border-border rounded-lg shadow-sm w-full max-w-lg p-6 space-y-4 max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
                         <div className="flex items-center justify-between">
                             <h2 className="text-lg font-semibold">{editing ? 'Modifier' : 'Nouveau template'}</h2>
                             <button onClick={() => { setShowModal(false); setEditing(null); }}><X className="h-5 w-5 text-muted-foreground" /></button>

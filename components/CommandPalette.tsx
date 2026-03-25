@@ -212,7 +212,7 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({ open, onClose })
 
             {/* Dialog */}
             <div className="fixed inset-x-4 top-[20%] z-50 mx-auto max-w-xl">
-                <div className="bg-background border border-border rounded-xl shadow-2xl overflow-hidden">
+                <div className="bg-background border border-border rounded-lg shadow-sm overflow-hidden">
                     {/* Search Input */}
                     <div className="flex items-center gap-3 px-4 border-b border-border">
                         <Search className="h-5 w-5 text-muted-foreground shrink-0" />

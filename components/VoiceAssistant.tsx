@@ -26,8 +26,8 @@ interface Message {
     expanded?: boolean;
 }
 
-const ORB_COLORS: [string, string] = ['#F97316', '#F59E0B'];
-const LIVE_ORB_COLORS: [string, string] = ['#22C55E', '#3B82F6'];
+const ORB_COLORS: [string, string] = ['#4a4a4a', '#1a1a1a'];
+const LIVE_ORB_COLORS: [string, string] = ['#2a2a2a', '#0a0a0a'];
 
 interface SpeechRecognitionEvent {
     results: { [key: number]: { [key: number]: { transcript: string } } };
@@ -215,8 +215,7 @@ REGLES:
             const { response, actions } = await lexiaAI.chat(t);
             for (const a of actions) setMessages(p => [...p, { role: 'action', text: a.description, action: a, timestamp: new Date() }]);
             setMessages(p => [...p, { role: 'assistant', text: response, timestamp: new Date() }]);
-            if (voiceEnabled && response.length < 500) playAudio(response.replace(/[^\w\sàâäéèêëïîôùûüÿçœæ.,!?'-]/g, '').replace(/\n/g, '. '));
-            else setAgentState(null);
+            setAgentState(null);
         } catch (e: any) {
             setMessages(p => [...p, { role: 'assistant', text: `Erreur: ${e.message}`, timestamp: new Date() }]);
             setAgentState(null);
@@ -268,14 +267,15 @@ REGLES:
         const isSmartSearch = action.target === 'smart_search';
         const isProposal = action.target === 'proposal_outline';
         const isScheduler = action.target === 'scheduler';
-        const hasDetail = isDraft || isBriefing || isEmailSummary || isRelationship || isFollowUps || isLeadScores || isReport || isPriorities || isAlerts || isEmailActions || isMeetingPrep || isDebrief || isBulkFollowUp || isEnrichment || isForecast || isSmartSearch || isProposal || isScheduler;
+        const isEmailAnalysis = action.target === 'email_analysis';
+        const hasDetail = isDraft || isBriefing || isEmailSummary || isRelationship || isFollowUps || isLeadScores || isReport || isPriorities || isAlerts || isEmailActions || isMeetingPrep || isDebrief || isBulkFollowUp || isEnrichment || isForecast || isSmartSearch || isProposal || isScheduler || isEmailAnalysis;
 
-        const severityColor = (s: string) => s === 'high' ? 'bg-red-400' : s === 'medium' ? 'bg-amber-400' : 'bg-white/20';
-        const typeColor = (t: string) => t === 'risk' ? 'text-red-400' : t === 'opportunity' ? 'text-emerald-400' : t === 'overdue' ? 'text-amber-400' : 'text-blue-400';
-        const scoreColor = (s: number) => s >= 70 ? 'text-emerald-400' : s >= 40 ? 'text-amber-400' : 'text-red-400';
+        const severityColor = (s: string) => s === 'high' ? 'bg-foreground' : s === 'medium' ? 'bg-foreground/50' : 'bg-muted-foreground/30';
+        const typeColor = (t: string) => t === 'risk' ? 'text-foreground' : t === 'opportunity' ? 'text-foreground' : t === 'overdue' ? 'text-muted-foreground' : 'text-muted-foreground';
+        const scoreColor = (s: number) => s >= 70 ? 'text-foreground' : s >= 40 ? 'text-muted-foreground' : 'text-muted-foreground';
 
         return (
-            <div className={cn("rounded-lg border transition-all overflow-hidden", action.success ? "border-white/[0.06] bg-white/[0.03]" : "border-red-500/20 bg-red-500/5")}>
+            <div className={cn("rounded-lg border transition-all overflow-hidden", action.success ? "border-white/[0.06] bg-white/[0.03]" : "border-border bg-muted")}>
                 <div className={cn("flex items-center gap-3 px-3 py-2.5", hasDetail && "cursor-pointer hover:bg-white/[0.02]")}
                     onClick={() => { if (hasDetail) setExpandedAction(isExpanded ? null : `action-${id}`); else handleActionClick(action); }}>
                     <div className="h-7 w-7 rounded-md bg-white/[0.06] flex items-center justify-center flex-shrink-0">
@@ -304,18 +304,137 @@ REGLES:
                 {isExpanded && isBriefing && action.result && (
                     <div className="border-t border-white/[0.06] bg-white/[0.02] px-3 py-3 space-y-3">
                         {action.result.todayTasks?.length > 0 && (<div><p className="text-[11px] text-white/30 uppercase tracking-wider mb-1.5">Taches du jour</p>
-                            {action.result.todayTasks.map((t: any, i: number) => (<div key={i} className="flex items-center gap-2 py-1"><div className={cn("h-1.5 w-1.5 rounded-full", t.priority === 'high' ? "bg-red-400" : t.priority === 'medium' ? "bg-amber-400" : "bg-white/20")} /><span className="text-[12px] text-white/60">{t.title}</span>{t.company && <span className="text-[11px] text-white/25">{t.company}</span>}</div>))}</div>)}
+                            {action.result.todayTasks.map((t: any, i: number) => (<div key={i} className="flex items-center gap-2 py-1"><div className={cn("h-1.5 w-1.5 rounded-full", t.priority === 'high' ? "bg-foreground" : t.priority === 'medium' ? "bg-foreground/50" : "bg-muted-foreground/30")} /><span className="text-[12px] text-white/60">{t.title}</span>{t.company && <span className="text-[11px] text-white/25">{t.company}</span>}</div>))}</div>)}
                         {action.result.todayEvents?.length > 0 && (<div><p className="text-[11px] text-white/30 uppercase tracking-wider mb-1.5">Agenda</p>
                             {action.result.todayEvents.map((e: any, i: number) => (<div key={i} className="flex items-center gap-2 py-1"><Calendar className="h-3 w-3 text-white/20" /><span className="text-[12px] text-white/60">{e.title}</span><span className="text-[11px] text-white/25 ml-auto">{new Date(e.time).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}</span></div>))}</div>)}
                         {action.result.urgentClients?.length > 0 && (<div><p className="text-[11px] text-white/30 uppercase tracking-wider mb-1.5">Clients a recontacter</p>
-                            {action.result.urgentClients.map((c: any, i: number) => (<div key={i} className="flex items-center gap-2 py-1"><div className="h-1.5 w-1.5 rounded-full bg-red-400" /><span className="text-[12px] text-white/60">{c.name}</span></div>))}</div>)}
+                            {action.result.urgentClients.map((c: any, i: number) => (<div key={i} className="flex items-center gap-2 py-1"><div className="h-1.5 w-1.5 rounded-full bg-foreground" /><span className="text-[12px] text-white/60">{c.name}</span></div>))}</div>)}
                     </div>
                 )}
 
                 {/* Email Summary */}
                 {isExpanded && isEmailSummary && action.result?.emails && (
                     <div className="border-t border-white/[0.06] bg-white/[0.02] px-3 py-3 space-y-1.5">
-                        {action.result.emails.map((e: any, i: number) => (<div key={i} className="flex items-start gap-2 py-1.5 border-b border-white/[0.03] last:border-0"><Mail className="h-3 w-3 text-white/20 mt-0.5 flex-shrink-0" /><div className="min-w-0"><p className="text-[12px] text-white/60 truncate">{e.subject || '(sans objet)'}</p><p className="text-[11px] text-white/30 truncate">{e.from}</p></div>{e.isUnread && <div className="h-1.5 w-1.5 rounded-full bg-blue-400 mt-1 flex-shrink-0 ml-auto" />}</div>))}
+                        {action.result.emails.map((e: any, i: number) => (<div key={i} className="flex items-start gap-2 py-1.5 border-b border-white/[0.03] last:border-0"><Mail className="h-3 w-3 text-white/20 mt-0.5 flex-shrink-0" /><div className="min-w-0"><p className="text-[12px] text-white/60 truncate">{e.subject || '(sans objet)'}</p><p className="text-[11px] text-white/30 truncate">{e.from}</p></div>{e.isUnread && <div className="h-1.5 w-1.5 rounded-full bg-foreground mt-1 flex-shrink-0 ml-auto" />}</div>))}
+                    </div>
+                )}
+
+                {/* Email Analysis (Deep) — emails à répondre + suivi client */}
+                {isExpanded && isEmailAnalysis && action.result && (
+                    <div className="border-t border-white/[0.06] bg-white/[0.02] px-3 py-3 space-y-3">
+                        {/* Summary stats */}
+                        <div className="flex gap-2">
+                            <div className="flex-1 rounded-md bg-white/[0.03] p-2 text-center">
+                                <p className="text-[10px] text-white/30">Analysés</p>
+                                <p className="text-[15px] text-white/80 font-medium">{action.result.totalAnalyzed || 0}</p>
+                            </div>
+                            <div className="flex-1 rounded-md bg-muted p-2 text-center">
+                                <p className="text-[10px] text-muted-foreground">A répondre</p>
+                                <p className="text-[15px] text-foreground font-medium">{action.result.needReply || 0}</p>
+                            </div>
+                            <div className="flex-1 rounded-md bg-muted p-2 text-center">
+                                <p className="text-[10px] text-muted-foreground">Clients</p>
+                                <p className="text-[15px] text-foreground font-medium">{action.result.fromClients || 0}</p>
+                            </div>
+                            {action.result.followUpMonitor && (
+                                <div className="flex-1 rounded-md bg-muted p-2 text-center">
+                                    <p className="text-[10px] text-muted-foreground">A relancer</p>
+                                    <p className="text-[15px] text-foreground font-medium">{action.result.followUpMonitor.awaitingReply || 0}</p>
+                                </div>
+                            )}
+                        </div>
+
+                        {/* Emails needing reply */}
+                        {action.result.emails?.filter((e: any) => e.needsReply).length > 0 && (
+                            <div>
+                                <p className="text-[11px] text-foreground uppercase tracking-wider mb-2 flex items-center gap-1.5">
+                                    <Mail className="h-3 w-3" />Mails en attente de ta réponse
+                                </p>
+                                <div className="space-y-1.5">
+                                    {action.result.emails.filter((e: any) => e.needsReply).map((e: any, i: number) => (
+                                        <div key={i} className="rounded-md bg-white/[0.03] border border-white/[0.06] p-2.5 space-y-1">
+                                            <div className="flex items-center gap-2">
+                                                <div className={cn("h-2 w-2 rounded-full flex-shrink-0",
+                                                    e.priority === 'critical' ? "bg-foreground" :
+                                                    e.priority === 'high' ? "bg-foreground/70" :
+                                                    e.priority === 'medium' ? "bg-foreground/50" : "bg-muted-foreground/30"
+                                                )} />
+                                                <span className="text-[12px] text-white/80 font-medium truncate flex-1">{e.from}</span>
+                                                {e.isClient && (
+                                                    <span className={cn("text-[9px] px-1.5 py-0.5 rounded-full font-medium uppercase tracking-wider",
+                                                        e.importance === 'high' ? "bg-foreground/10 text-foreground" : "bg-muted text-muted-foreground"
+                                                    )}>{e.importance === 'high' ? 'VIP' : 'Client'}</span>
+                                                )}
+                                            </div>
+                                            <p className="text-[12px] text-white/60 truncate pl-4">{e.subject || '(sans objet)'}</p>
+                                            {e.companyName && <p className="text-[10px] text-white/30 pl-4">{e.companyName}{e.pipelineStage ? ` · ${e.pipelineStage}` : ''}</p>}
+                                            {e.replySuggestion && (
+                                                <div className="ml-4 mt-1 px-2 py-1 rounded bg-white/[0.03] border border-white/[0.04]">
+                                                    <p className="text-[10px] text-muted-foreground flex items-center gap-1"><ArrowRight className="h-2.5 w-2.5" />{e.replySuggestion}</p>
+                                                </div>
+                                            )}
+                                            <p className="text-[10px] text-white/20 pl-4">{e.date}</p>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
+
+                        {/* Already replied emails (collapsed summary) */}
+                        {action.result.emails?.filter((e: any) => e.alreadyReplied).length > 0 && (
+                            <div>
+                                <p className="text-[11px] text-muted-foreground uppercase tracking-wider mb-1.5 flex items-center gap-1.5">
+                                    <CheckSquare className="h-3 w-3" />Déjà répondus ({action.result.emails.filter((e: any) => e.alreadyReplied).length})
+                                </p>
+                                <div className="space-y-0.5">
+                                    {action.result.emails.filter((e: any) => e.alreadyReplied).slice(0, 5).map((e: any, i: number) => (
+                                        <div key={i} className="flex items-center gap-2 py-1 opacity-50">
+                                            <CheckSquare className="h-3 w-3 text-muted-foreground flex-shrink-0" />
+                                            <span className="text-[11px] text-white/40 truncate">{e.from}</span>
+                                            <span className="text-[11px] text-white/20 truncate flex-1">{e.subject}</span>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
+
+                        {/* Follow-up monitor — conversations to track */}
+                        {action.result.followUpMonitor?.conversations?.filter((c: any) => c.urgency !== 'low').length > 0 && (
+                            <div>
+                                <p className="text-[11px] text-muted-foreground uppercase tracking-wider mb-2 flex items-center gap-1.5">
+                                    <Clock className="h-3 w-3" />Suivi client — relances
+                                </p>
+                                <div className="space-y-1.5">
+                                    {action.result.followUpMonitor.conversations.filter((c: any) => c.urgency !== 'low').map((c: any, i: number) => (
+                                        <div key={i} className="rounded-md bg-white/[0.03] border border-white/[0.06] p-2.5 space-y-1">
+                                            <div className="flex items-center gap-2">
+                                                <div className={cn("h-2 w-2 rounded-full flex-shrink-0",
+                                                    c.urgency === 'critical' ? "bg-foreground" :
+                                                    c.urgency === 'high' ? "bg-foreground/70" : "bg-foreground/50"
+                                                )} />
+                                                <span className="text-[12px] text-white/80 font-medium">{c.contactName}</span>
+                                                <span className="text-[11px] text-white/30">{c.companyName}</span>
+                                                <span className={cn("text-[9px] px-1.5 py-0.5 rounded-full font-medium ml-auto",
+                                                    c.status === 'needs_our_reply' ? "bg-foreground/10 text-foreground" :
+                                                    c.status === 'awaiting_their_reply' ? "bg-muted text-muted-foreground" :
+                                                    "bg-white/10 text-white/40"
+                                                )}>{c.status === 'needs_our_reply' ? 'A REPONDRE' : c.status === 'awaiting_their_reply' ? 'EN ATTENTE' : 'INACTIF'}</span>
+                                            </div>
+                                            {c.lastReceived && <p className="text-[10px] text-white/40 pl-4">Reçu: &ldquo;{c.lastReceived.subject}&rdquo; il y a {c.lastReceived.daysAgo}j</p>}
+                                            {c.lastSent && <p className="text-[10px] text-white/40 pl-4">Envoyé: &ldquo;{c.lastSent.subject}&rdquo; il y a {c.lastSent.daysAgo}j</p>}
+                                            {c.pendingTopics?.length > 0 && (
+                                                <div className="flex gap-1 pl-4 flex-wrap">
+                                                    {c.pendingTopics.map((t: string, ti: number) => (
+                                                        <span key={ti} className="text-[9px] px-1.5 py-0.5 rounded bg-white/[0.05] text-white/40">{t}</span>
+                                                    ))}
+                                                </div>
+                                            )}
+                                            <p className="text-[11px] text-white/50 pl-4 mt-0.5">{c.recommendation}</p>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
                     </div>
                 )}
 
@@ -329,7 +448,7 @@ REGLES:
                             </div>
                             <div className="flex items-center gap-2">
                                 <div className="w-20 h-1.5 bg-white/10 rounded-full overflow-hidden">
-                                    <div className={cn("h-full rounded-full", action.result.healthScore >= 70 ? "bg-emerald-400" : action.result.healthScore >= 40 ? "bg-amber-400" : "bg-red-400")} style={{ width: `${action.result.healthScore}%` }} />
+                                    <div className={cn("h-full rounded-full", action.result.healthScore >= 70 ? "bg-foreground" : action.result.healthScore >= 40 ? "bg-foreground/50" : "bg-muted-foreground/50")} style={{ width: `${action.result.healthScore}%` }} />
                                 </div>
                                 <span className={cn("text-[13px] font-medium", scoreColor(action.result.healthScore))}>{action.result.healthScore}/100</span>
                             </div>
@@ -341,10 +460,10 @@ REGLES:
                         </div>
                         {action.result.contacts?.length > 0 && (<div><p className="text-[11px] text-white/30 uppercase tracking-wider mb-1.5">Contacts</p>
                             {action.result.contacts.map((c: any, i: number) => (<div key={i} className="flex items-center gap-2 py-0.5"><Users className="h-3 w-3 text-white/20" /><span className="text-[12px] text-white/60">{c.name}</span><span className="text-[11px] text-white/25">{c.role}</span></div>))}</div>)}
-                        {action.result.risks?.length > 0 && (<div><p className="text-[11px] text-red-400/60 uppercase tracking-wider mb-1.5">Risques</p>
-                            {action.result.risks.map((r: string, i: number) => (<div key={i} className="flex items-center gap-2 py-0.5"><AlertTriangle className="h-3 w-3 text-red-400/60" /><span className="text-[12px] text-red-300/60">{r}</span></div>))}</div>)}
-                        {action.result.nextActions?.length > 0 && (<div><p className="text-[11px] text-emerald-400/60 uppercase tracking-wider mb-1.5">Actions recommandees</p>
-                            {action.result.nextActions.map((a: string, i: number) => (<div key={i} className="flex items-center gap-2 py-0.5"><ArrowRight className="h-3 w-3 text-emerald-400/60" /><span className="text-[12px] text-emerald-300/60">{a}</span></div>))}</div>)}
+                        {action.result.risks?.length > 0 && (<div><p className="text-[11px] text-muted-foreground uppercase tracking-wider mb-1.5">Risques</p>
+                            {action.result.risks.map((r: string, i: number) => (<div key={i} className="flex items-center gap-2 py-0.5"><AlertTriangle className="h-3 w-3 text-muted-foreground" /><span className="text-[12px] text-muted-foreground">{r}</span></div>))}</div>)}
+                        {action.result.nextActions?.length > 0 && (<div><p className="text-[11px] text-muted-foreground uppercase tracking-wider mb-1.5">Actions recommandees</p>
+                            {action.result.nextActions.map((a: string, i: number) => (<div key={i} className="flex items-center gap-2 py-0.5"><ArrowRight className="h-3 w-3 text-muted-foreground" /><span className="text-[12px] text-muted-foreground">{a}</span></div>))}</div>)}
                     </div>
                 )}
 
@@ -380,7 +499,7 @@ REGLES:
                                         <span className={cn("text-[13px] font-bold", scoreColor(s.score))}>{s.score}</span>
                                     </div>
                                     <div className="w-full h-1 bg-white/10 rounded-full mt-1 overflow-hidden">
-                                        <div className={cn("h-full rounded-full transition-all", s.score >= 70 ? "bg-emerald-400" : s.score >= 40 ? "bg-amber-400" : "bg-red-400")} style={{ width: `${s.score}%` }} />
+                                        <div className={cn("h-full rounded-full transition-all", s.score >= 70 ? "bg-foreground" : s.score >= 40 ? "bg-foreground/50" : "bg-muted-foreground/50")} style={{ width: `${s.score}%` }} />
                                     </div>
                                     <p className="text-[11px] text-white/30 mt-0.5">{s.reasons.join(' / ')}</p>
                                 </div>
@@ -395,13 +514,13 @@ REGLES:
                         <div className="grid grid-cols-4 gap-2">
                             <div className="rounded-md bg-white/[0.03] p-2 text-center"><p className="text-[11px] text-white/30">Activites</p><p className="text-[15px] text-white/80 font-medium">{action.result.totalActivities}</p></div>
                             <div className="rounded-md bg-white/[0.03] p-2 text-center"><p className="text-[11px] text-white/30">Entreprises</p><p className="text-[15px] text-white/80 font-medium">{action.result.totalCompanies}</p></div>
-                            <div className="rounded-md bg-white/[0.03] p-2 text-center"><p className="text-[11px] text-white/30">Terminees</p><p className="text-[15px] text-emerald-400 font-medium">{action.result.tasksCompleted}</p></div>
-                            <div className="rounded-md bg-white/[0.03] p-2 text-center"><p className="text-[11px] text-white/30">En cours</p><p className="text-[15px] text-amber-400 font-medium">{action.result.tasksPending}</p></div>
+                            <div className="rounded-md bg-white/[0.03] p-2 text-center"><p className="text-[11px] text-white/30">Terminees</p><p className="text-[15px] text-foreground font-medium">{action.result.tasksCompleted}</p></div>
+                            <div className="rounded-md bg-white/[0.03] p-2 text-center"><p className="text-[11px] text-white/30">En cours</p><p className="text-[15px] text-muted-foreground font-medium">{action.result.tasksPending}</p></div>
                         </div>
                         {action.result.pipeline && (<div><p className="text-[11px] text-white/30 uppercase tracking-wider mb-1.5">Pipeline</p>
                             <div className="flex gap-1 h-3 rounded-full overflow-hidden bg-white/5">
                                 {Object.entries(action.result.pipeline).map(([stage, count]: [string, any]) => (
-                                    <div key={stage} className={cn("h-full transition-all", stage === 'client_success' ? 'bg-emerald-500' : stage === 'validation' ? 'bg-blue-500' : stage === 'proposal' ? 'bg-amber-500' : stage === 'exchange' ? 'bg-blue-500' : 'bg-white/20')} style={{ flex: count }} title={`${stage}: ${count}`} />
+                                    <div key={stage} className={cn("h-full transition-all", stage === 'client_success' ? 'bg-foreground' : stage === 'validation' ? 'bg-foreground/70' : stage === 'proposal' ? 'bg-foreground/50' : stage === 'exchange' ? 'bg-foreground/30' : 'bg-muted-foreground/20')} style={{ flex: count }} title={`${stage}: ${count}`} />
                                 ))}
                             </div>
                             <div className="flex justify-between mt-1">{Object.entries(action.result.pipeline).map(([stage, count]: [string, any]) => (<span key={stage} className="text-[10px] text-white/25">{stage.replace('_', ' ')} ({count})</span>))}</div>
@@ -421,7 +540,7 @@ REGLES:
                                 {action.result.suggestedSchedule.map((b: any, i: number) => (
                                     <div key={i} className="flex items-center gap-3 py-1.5 px-2 rounded-md bg-white/[0.02]">
                                         <span className="text-[12px] text-white/30 w-10 font-mono">{b.time}</span>
-                                        <div className={cn("h-1.5 w-1.5 rounded-full", b.type === 'meeting' ? 'bg-blue-400' : b.type === 'focus' ? 'bg-orange-400' : 'bg-emerald-400')} />
+                                        <div className={cn("h-1.5 w-1.5 rounded-full", b.type === 'meeting' ? 'bg-foreground' : b.type === 'focus' ? 'bg-foreground/70' : 'bg-foreground/50')} />
                                         <span className="text-[12px] text-white/70">{b.task}</span>
                                         <span className="text-[10px] text-white/20 ml-auto">{b.type === 'meeting' ? 'reunion' : 'tache'}</span>
                                     </div>
@@ -432,7 +551,7 @@ REGLES:
                             {action.result.prioritizedTasks.map((t: any, i: number) => (
                                 <div key={i} className="flex items-center gap-2 py-1">
                                     <span className="text-[11px] text-white/20 w-4">{i + 1}.</span>
-                                    <div className={cn("h-1.5 w-1.5 rounded-full", t.priority === 'high' ? "bg-red-400" : t.priority === 'medium' ? "bg-amber-400" : "bg-white/20")} />
+                                    <div className={cn("h-1.5 w-1.5 rounded-full", t.priority === 'high' ? "bg-foreground" : t.priority === 'medium' ? "bg-foreground/50" : "bg-muted-foreground/30")} />
                                     <span className="text-[12px] text-white/60 flex-1">{t.title}</span>
                                     {t.reasons?.length > 0 && <span className="text-[10px] text-white/25">{t.reasons[0]}</span>}
                                 </div>
@@ -445,9 +564,9 @@ REGLES:
                     <div className="border-t border-white/[0.06] bg-white/[0.02] px-3 py-3 space-y-3">
                         {action.result.summary && (
                             <div className="flex gap-3 text-center">
-                                <div className="flex-1 rounded-md bg-red-500/10 p-1.5"><p className="text-[10px] text-red-400/60">Critique</p><p className="text-[14px] text-red-400 font-medium">{action.result.summary.high}</p></div>
-                                <div className="flex-1 rounded-md bg-amber-500/10 p-1.5"><p className="text-[10px] text-amber-400/60">Moyen</p><p className="text-[14px] text-amber-400 font-medium">{action.result.summary.medium}</p></div>
-                                <div className="flex-1 rounded-md bg-emerald-500/10 p-1.5"><p className="text-[10px] text-emerald-400/60">Opportunites</p><p className="text-[14px] text-emerald-400 font-medium">{action.result.summary.opportunities}</p></div>
+                                <div className="flex-1 rounded-md bg-muted p-1.5"><p className="text-[10px] text-muted-foreground">Critique</p><p className="text-[14px] text-foreground font-medium">{action.result.summary.high}</p></div>
+                                <div className="flex-1 rounded-md bg-muted p-1.5"><p className="text-[10px] text-muted-foreground">Moyen</p><p className="text-[14px] text-foreground font-medium">{action.result.summary.medium}</p></div>
+                                <div className="flex-1 rounded-md bg-muted p-1.5"><p className="text-[10px] text-muted-foreground">Opportunites</p><p className="text-[14px] text-foreground font-medium">{action.result.summary.opportunities}</p></div>
                             </div>
                         )}
                         {action.result.alerts?.map((a: any, i: number) => (
@@ -469,7 +588,7 @@ REGLES:
                     <div className="border-t border-white/[0.06] bg-white/[0.02] px-3 py-3 space-y-2">
                         <div className="flex items-center justify-between mb-2">
                             <span className="text-[11px] text-white/30">{action.result.emailsScanned} email(s) scannes</span>
-                            {action.result.tasksCreated > 0 && <span className="text-[11px] text-emerald-400/60">{action.result.tasksCreated} tache(s) creee(s)</span>}
+                            {action.result.tasksCreated > 0 && <span className="text-[11px] text-muted-foreground">{action.result.tasksCreated} tache(s) creee(s)</span>}
                         </div>
                         {action.result.actions.map((a: any, i: number) => (
                             <div key={i} className="rounded-md bg-white/[0.03] p-2 space-y-0.5">
@@ -493,20 +612,20 @@ REGLES:
                             {action.result.contacts.map((c: any, i: number) => (
                                 <div key={i} className="flex items-center gap-2 py-0.5"><Users className="h-3 w-3 text-white/20" /><span className="text-[12px] text-white/60">{c.name}</span><span className="text-[11px] text-white/25">{c.role}</span>{c.email && <span className="text-[11px] text-white/20 ml-auto">{c.email}</span>}</div>
                             ))}</div>)}
-                        {action.result.talkingPoints?.length > 0 && (<div><p className="text-[11px] text-orange-400/60 uppercase tracking-wider mb-1.5">Points a aborder</p>
+                        {action.result.talkingPoints?.length > 0 && (<div><p className="text-[11px] text-muted-foreground uppercase tracking-wider mb-1.5">Points a aborder</p>
                             {action.result.talkingPoints.map((tp: string, i: number) => (
                                 <div key={i} className="flex items-start gap-2 py-0.5"><span className="text-[11px] text-white/20 w-4">{i + 1}.</span><span className="text-[12px] text-white/60">{tp}</span></div>
                             ))}</div>)}
-                        {action.result.agenda?.length > 0 && (<div><p className="text-[11px] text-blue-400/60 uppercase tracking-wider mb-1.5">Agenda suggere</p>
+                        {action.result.agenda?.length > 0 && (<div><p className="text-[11px] text-muted-foreground uppercase tracking-wider mb-1.5">Agenda suggere</p>
                             {action.result.agenda.map((a: any, i: number) => (
                                 <div key={i} className="flex items-center gap-3 py-1 px-2 rounded bg-white/[0.02]">
                                     <span className="text-[11px] text-white/30 font-mono w-14">{a.time}</span>
                                     <span className="text-[12px] text-white/60">{a.topic}</span>
                                 </div>
                             ))}</div>)}
-                        {action.result.pendingTasks?.length > 0 && (<div><p className="text-[11px] text-amber-400/60 uppercase tracking-wider mb-1.5">Taches en cours</p>
+                        {action.result.pendingTasks?.length > 0 && (<div><p className="text-[11px] text-muted-foreground uppercase tracking-wider mb-1.5">Taches en cours</p>
                             {action.result.pendingTasks.map((t: any, i: number) => (
-                                <div key={i} className="flex items-center gap-2 py-0.5"><div className={cn("h-1.5 w-1.5 rounded-full", t.priority === 'high' ? 'bg-red-400' : 'bg-amber-400')} /><span className="text-[12px] text-white/50">{t.title}</span></div>
+                                <div key={i} className="flex items-center gap-2 py-0.5"><div className={cn("h-1.5 w-1.5 rounded-full", t.priority === 'high' ? 'bg-foreground' : 'bg-foreground/50')} /><span className="text-[12px] text-white/50">{t.title}</span></div>
                             ))}</div>)}
                     </div>
                 )}
@@ -518,13 +637,13 @@ REGLES:
                             <p className="text-[11px] text-white/30 mb-1">Notes</p>
                             <p className="text-[12px] text-white/50 leading-relaxed">{action.result.notesSummary}</p>
                         </div>
-                        {action.result.actions?.length > 0 && (<div><p className="text-[11px] text-emerald-400/60 uppercase tracking-wider mb-1.5">Actions effectuees</p>
+                        {action.result.actions?.length > 0 && (<div><p className="text-[11px] text-muted-foreground uppercase tracking-wider mb-1.5">Actions effectuees</p>
                             {action.result.actions.map((a: string, i: number) => (
-                                <div key={i} className="flex items-center gap-2 py-0.5"><CheckSquare className="h-3 w-3 text-emerald-400/60" /><span className="text-[12px] text-emerald-300/60">{a}</span></div>
+                                <div key={i} className="flex items-center gap-2 py-0.5"><CheckSquare className="h-3 w-3 text-muted-foreground" /><span className="text-[12px] text-muted-foreground">{a}</span></div>
                             ))}</div>)}
-                        {action.result.createdTasks?.length > 0 && (<div><p className="text-[11px] text-blue-400/60 uppercase tracking-wider mb-1.5">Taches creees</p>
+                        {action.result.createdTasks?.length > 0 && (<div><p className="text-[11px] text-muted-foreground uppercase tracking-wider mb-1.5">Taches creees</p>
                             {action.result.createdTasks.map((t: string, i: number) => (
-                                <div key={i} className="flex items-center gap-2 py-0.5"><Plus className="h-3 w-3 text-blue-400/60" /><span className="text-[12px] text-blue-300/60">{t}</span></div>
+                                <div key={i} className="flex items-center gap-2 py-0.5"><Plus className="h-3 w-3 text-muted-foreground" /><span className="text-[12px] text-muted-foreground">{t}</span></div>
                             ))}</div>)}
                         {action.result.newStage && <div className="flex items-center gap-2"><span className="text-[11px] text-white/30">Pipeline</span><span className="text-[12px] text-white/60">{action.result.newStage}</span></div>}
                     </div>
@@ -564,13 +683,13 @@ REGLES:
                         <div className="p-2.5 rounded-md bg-white/[0.03] border border-white/[0.04]">
                             <p className="text-[12px] text-white/50 leading-relaxed">{action.result.description}</p>
                         </div>
-                        {action.result.potentialNeeds?.length > 0 && (<div><p className="text-[11px] text-orange-400/60 uppercase tracking-wider mb-1.5">Besoins potentiels</p>
+                        {action.result.potentialNeeds?.length > 0 && (<div><p className="text-[11px] text-muted-foreground uppercase tracking-wider mb-1.5">Besoins potentiels</p>
                             {action.result.potentialNeeds.map((n: string, i: number) => (
-                                <div key={i} className="flex items-center gap-2 py-0.5"><Target className="h-3 w-3 text-orange-400/40" /><span className="text-[12px] text-white/60">{n}</span></div>
+                                <div key={i} className="flex items-center gap-2 py-0.5"><Target className="h-3 w-3 text-muted-foreground" /><span className="text-[12px] text-white/60">{n}</span></div>
                             ))}</div>)}
-                        {action.result.suggestedContacts?.length > 0 && (<div><p className="text-[11px] text-blue-400/60 uppercase tracking-wider mb-1.5">Contacts a identifier</p>
+                        {action.result.suggestedContacts?.length > 0 && (<div><p className="text-[11px] text-muted-foreground uppercase tracking-wider mb-1.5">Contacts a identifier</p>
                             {action.result.suggestedContacts.map((c: string, i: number) => (
-                                <div key={i} className="flex items-center gap-2 py-0.5"><Users className="h-3 w-3 text-blue-400/40" /><span className="text-[12px] text-white/60">{c}</span></div>
+                                <div key={i} className="flex items-center gap-2 py-0.5"><Users className="h-3 w-3 text-muted-foreground" /><span className="text-[12px] text-white/60">{c}</span></div>
                             ))}</div>)}
                     </div>
                 )}
@@ -582,14 +701,14 @@ REGLES:
                             <div key={i} className="rounded-md bg-white/[0.03] p-2.5 space-y-1.5">
                                 <div className="flex items-center justify-between">
                                     <span className="text-[13px] text-white/80 font-medium">{f.company}</span>
-                                    <span className={cn("text-[15px] font-bold", f.probability >= 60 ? 'text-emerald-400' : f.probability >= 35 ? 'text-amber-400' : 'text-red-400')}>{f.probability}%</span>
+                                    <span className={cn("text-[15px] font-bold", f.probability >= 60 ? 'text-foreground' : f.probability >= 35 ? 'text-muted-foreground' : 'text-muted-foreground')}>{f.probability}%</span>
                                 </div>
                                 <div className="w-full h-2 bg-white/10 rounded-full overflow-hidden">
-                                    <div className={cn("h-full rounded-full transition-all", f.probability >= 60 ? 'bg-emerald-400' : f.probability >= 35 ? 'bg-amber-400' : 'bg-red-400')} style={{ width: `${f.probability}%` }} />
+                                    <div className={cn("h-full rounded-full transition-all", f.probability >= 60 ? 'bg-foreground' : f.probability >= 35 ? 'bg-foreground/50' : 'bg-muted-foreground/50')} style={{ width: `${f.probability}%` }} />
                                 </div>
                                 <div className="flex flex-wrap gap-1 mt-1">
                                     {f.factors?.slice(0, 3).map((fct: any, j: number) => (
-                                        <span key={j} className={cn("text-[10px] px-1.5 py-0.5 rounded", fct.impact > 0 ? 'bg-emerald-500/10 text-emerald-400/70' : 'bg-red-500/10 text-red-400/70')}>{fct.factor}</span>
+                                        <span key={j} className={cn("text-[10px] px-1.5 py-0.5 rounded", fct.impact > 0 ? 'bg-foreground/5 text-foreground' : 'bg-muted text-muted-foreground')}>{fct.factor}</span>
                                     ))}
                                 </div>
                             </div>
@@ -650,20 +769,20 @@ REGLES:
                             <span>{action.result.calendarEventsCount} evenement(s) existant(s)</span>
                         </div>
                         <div className="grid grid-cols-4 gap-2">
-                            <div className="rounded-md bg-white/[0.03] p-2 text-center"><p className="text-[10px] text-white/30">Occupes</p><p className="text-[14px] text-red-400 font-medium">{action.result.summary?.totalBusy || 0}</p></div>
-                            <div className="rounded-md bg-white/[0.03] p-2 text-center"><p className="text-[10px] text-white/30">Libres</p><p className="text-[14px] text-emerald-400 font-medium">{action.result.summary?.totalFreeSlots || 0}</p></div>
-                            <div className="rounded-md bg-white/[0.03] p-2 text-center"><p className="text-[10px] text-white/30">Clients</p><p className="text-[14px] text-blue-400 font-medium">{action.result.summary?.companiesContacted || 0}</p></div>
-                            <div className="rounded-md bg-white/[0.03] p-2 text-center"><p className="text-[10px] text-white/30">Drafts</p><p className="text-[14px] text-orange-400 font-medium">{action.result.summary?.draftsSent || 0}</p></div>
+                            <div className="rounded-md bg-white/[0.03] p-2 text-center"><p className="text-[10px] text-white/30">Occupes</p><p className="text-[14px] text-foreground font-medium">{action.result.summary?.totalBusy || 0}</p></div>
+                            <div className="rounded-md bg-white/[0.03] p-2 text-center"><p className="text-[10px] text-white/30">Libres</p><p className="text-[14px] text-foreground font-medium">{action.result.summary?.totalFreeSlots || 0}</p></div>
+                            <div className="rounded-md bg-white/[0.03] p-2 text-center"><p className="text-[10px] text-white/30">Clients</p><p className="text-[14px] text-foreground font-medium">{action.result.summary?.companiesContacted || 0}</p></div>
+                            <div className="rounded-md bg-white/[0.03] p-2 text-center"><p className="text-[10px] text-white/30">Drafts</p><p className="text-[14px] text-foreground font-medium">{action.result.summary?.draftsSent || 0}</p></div>
                         </div>
 
                         {/* Busy slots */}
                         {action.result.busySlots?.length > 0 && (
                             <div>
-                                <p className="text-[11px] text-red-400/60 uppercase tracking-wider mb-1.5">Creneaux occupes</p>
+                                <p className="text-[11px] text-muted-foreground uppercase tracking-wider mb-1.5">Creneaux occupes</p>
                                 <div className="space-y-0.5">
                                     {action.result.busySlots.map((s: any, i: number) => (
-                                        <div key={i} className="flex items-center gap-2 py-0.5 px-1.5 rounded bg-red-500/5">
-                                            <div className="h-1.5 w-1.5 rounded-full bg-red-400 flex-shrink-0" />
+                                        <div key={i} className="flex items-center gap-2 py-0.5 px-1.5 rounded bg-muted">
+                                            <div className="h-1.5 w-1.5 rounded-full bg-foreground flex-shrink-0" />
                                             <span className="text-[11px] text-white/30 w-16">{s.date}</span>
                                             <span className="text-[11px] text-white/50 font-mono">{s.start}-{s.end}</span>
                                             <span className="text-[11px] text-white/40 truncate flex-1">{s.title}</span>
@@ -676,13 +795,13 @@ REGLES:
                         {/* Free slots */}
                         {action.result.freeSlots?.length > 0 && (
                             <div>
-                                <p className="text-[11px] text-emerald-400/60 uppercase tracking-wider mb-1.5">Creneaux disponibles</p>
+                                <p className="text-[11px] text-muted-foreground uppercase tracking-wider mb-1.5">Creneaux disponibles</p>
                                 <div className="space-y-0.5">
                                     {action.result.freeSlots.slice(0, 8).map((s: any, i: number) => (
-                                        <div key={i} className="flex items-center gap-2 py-0.5 px-1.5 rounded bg-emerald-500/5">
-                                            <div className="h-1.5 w-1.5 rounded-full bg-emerald-400 flex-shrink-0" />
+                                        <div key={i} className="flex items-center gap-2 py-0.5 px-1.5 rounded bg-muted">
+                                            <div className="h-1.5 w-1.5 rounded-full bg-foreground flex-shrink-0" />
                                             <span className="text-[11px] text-white/50 w-24">{s.dayLabel}</span>
-                                            <span className="text-[11px] text-emerald-300/70 font-mono">{s.start} - {s.end}</span>
+                                            <span className="text-[11px] text-foreground font-mono">{s.start} - {s.end}</span>
                                             <span className="text-[10px] text-white/20 ml-auto">{s.durationMin}min</span>
                                         </div>
                                     ))}
@@ -694,22 +813,22 @@ REGLES:
                         {/* Proposed meetings with email drafts */}
                         {action.result.proposedMeetings?.length > 0 && (
                             <div>
-                                <p className="text-[11px] text-blue-400/60 uppercase tracking-wider mb-1.5">Propositions envoyees</p>
+                                <p className="text-[11px] text-muted-foreground uppercase tracking-wider mb-1.5">Propositions envoyees</p>
                                 <div className="space-y-2">
                                     {action.result.proposedMeetings.map((m: any, i: number) => (
                                         <div key={i} className="rounded-md bg-white/[0.03] p-2.5 space-y-1.5">
                                             <div className="flex items-center justify-between">
                                                 <span className="text-[13px] text-white/80 font-medium">{m.company}</span>
                                                 {m.emailDrafted ? (
-                                                    <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400/70">Draft envoye</span>
+                                                    <span className="text-[10px] px-2 py-0.5 rounded-full bg-foreground/5 text-foreground">Draft envoye</span>
                                                 ) : (
-                                                    <span className="text-[10px] px-2 py-0.5 rounded-full bg-amber-500/10 text-amber-400/70">Pas d'email</span>
+                                                    <span className="text-[10px] px-2 py-0.5 rounded-full bg-muted text-muted-foreground">Pas d'email</span>
                                                 )}
                                             </div>
                                             <p className="text-[11px] text-white/30">{m.contact} — {m.contactEmail || 'email manquant'}</p>
                                             <div className="flex flex-wrap gap-1.5">
                                                 {m.proposedSlots?.map((slot: any, j: number) => (
-                                                    <span key={j} className="text-[10px] px-2 py-0.5 rounded bg-blue-500/10 text-blue-300/70">{slot.day} a {slot.time}</span>
+                                                    <span key={j} className="text-[10px] px-2 py-0.5 rounded bg-muted text-muted-foreground">{slot.day} a {slot.time}</span>
                                                 ))}
                                             </div>
                                             {m.emailDrafted && (
@@ -739,16 +858,13 @@ REGLES:
             {!isOpen && (
                 <button onClick={() => setIsOpen(true)} className="fixed bottom-6 right-6 z-50">
                     <div className={cn(
-                        "h-14 w-14 rounded-full p-[2px] shadow-xl transition-transform hover:scale-105 active:scale-95",
-                        isLiveConnected
-                            ? "bg-gradient-to-br from-emerald-500 to-blue-500"
-                            : "bg-gradient-to-br from-orange-500 to-amber-500"
+                        "h-14 w-14 rounded-full p-[2px] shadow-sm transition-transform hover:scale-105 active:scale-95 bg-foreground"
                     )}>
                         <div className="h-full w-full rounded-full bg-[#0a0a0b] overflow-hidden">
                             <Orb colors={isLiveConnected ? LIVE_ORB_COLORS : ORB_COLORS} agentState={agentState} />
                         </div>
                     </div>
-                    {isLiveConnected && <div className="absolute -top-0.5 -right-0.5 h-3 w-3 bg-emerald-400 rounded-full border-2 border-[#0a0a0b]" />}
+                    {isLiveConnected && <div className="absolute -top-0.5 -right-0.5 h-3 w-3 bg-foreground rounded-full border-2 border-background" />}
                 </button>
             )}
 
@@ -756,8 +872,8 @@ REGLES:
             {isOpen && (
                 <div className="fixed bottom-6 right-6 z-50 w-[380px] animate-in slide-in-from-bottom-4 fade-in duration-200">
                     <div className={cn(
-                        "rounded-2xl shadow-2xl overflow-hidden flex flex-col",
-                        mode === 'voice' ? "max-h-[600px] bg-[#0a0a0b]" : "max-h-[620px] bg-white dark:bg-[#111113]"
+                        "rounded-lg shadow-sm overflow-hidden flex flex-col border border-border",
+                        mode === 'voice' ? "max-h-[600px] bg-[#0a0a0b]" : "max-h-[620px] bg-background"
                     )}>
 
                         {/* ===== VOICE MODE ===== */}
@@ -789,8 +905,8 @@ REGLES:
                                         <div className="mt-5 flex items-center gap-2">
                                             <div className={cn(
                                                 "h-1.5 w-1.5 rounded-full",
-                                                liveState === 'speaking' ? "bg-emerald-400" :
-                                                liveState === 'listening' ? "bg-blue-400 animate-pulse" :
+                                                liveState === 'speaking' ? "bg-white" :
+                                                liveState === 'listening' ? "bg-white/60 animate-pulse" :
                                                 isLiveConnected ? "bg-white/30" : "bg-white/10"
                                             )} />
                                             <span className="text-[13px] text-white/50 font-light tracking-wide">
@@ -801,9 +917,9 @@ REGLES:
                                         {/* End call */}
                                         <button
                                             onClick={disconnectLive}
-                                            className="mt-5 h-10 w-10 rounded-full bg-red-500/10 hover:bg-red-500/20 border border-red-500/20 flex items-center justify-center transition"
+                                            className="mt-5 h-10 w-10 rounded-full bg-white/[0.06] hover:bg-white/[0.1] border border-white/[0.08] flex items-center justify-center transition"
                                         >
-                                            <PhoneOff className="h-4 w-4 text-red-400" />
+                                            <PhoneOff className="h-4 w-4 text-white/60" />
                                         </button>
                                     </div>
                                 </div>
@@ -844,16 +960,14 @@ REGLES:
 
                         /* ===== CHAT MODE ===== */
                             <>
-                                <div className="relative bg-[#fafafa] dark:bg-[#111113] border-b border-black/[0.04] dark:border-white/[0.06]">
+                                <div className="relative bg-background border-b border-border">
                                     <div className="absolute top-3 right-3 z-10 flex items-center gap-0.5">
-                                        <button onClick={() => { setMessages([]); lexiaAI.clearHistory(); }} className="p-1.5 rounded-md hover:bg-black/5 dark:hover:bg-white/5 transition">
-                                            <RefreshCw className="h-3.5 w-3.5 text-black/30 dark:text-white/30" />
+                                        <button onClick={() => { setMessages([]); lexiaAI.clearHistory(); }} className="p-1.5 rounded-md hover:bg-muted transition">
+                                            <RefreshCw className="h-3.5 w-3.5 text-muted-foreground" />
                                         </button>
-                                        <button onClick={() => setVoiceEnabled(!voiceEnabled)} className="p-1.5 rounded-md hover:bg-black/5 dark:hover:bg-white/5 transition">
-                                            {voiceEnabled ? <Volume2 className="h-3.5 w-3.5 text-black/30 dark:text-white/30" /> : <VolumeX className="h-3.5 w-3.5 text-black/20 dark:text-white/20" />}
-                                        </button>
-                                        <button onClick={() => setIsOpen(false)} className="p-1.5 rounded-md hover:bg-black/5 dark:hover:bg-white/5 transition">
-                                            <X className="h-3.5 w-3.5 text-black/30 dark:text-white/30" />
+                                        
+                                        <button onClick={() => setIsOpen(false)} className="p-1.5 rounded-md hover:bg-muted transition">
+                                            <X className="h-3.5 w-3.5 text-muted-foreground" />
                                         </button>
                                     </div>
 
@@ -861,14 +975,13 @@ REGLES:
                                         <div className="h-14 w-14 rounded-full bg-[#0a0a0b] overflow-hidden">
                                             <Orb colors={ORB_COLORS} agentState={agentState} />
                                         </div>
-                                        <p className="mt-2.5 text-[14px] font-medium text-black/80 dark:text-white/80 tracking-tight">Lexia</p>
-                                        <p className="text-[11px] text-black/35 dark:text-white/35 mt-0.5">{getStatusLabel()}</p>
+                                        <p className="mt-2.5 text-[14px] font-medium text-foreground tracking-tight">Lexia</p>
+                                        <p className="text-[11px] text-muted-foreground mt-0.5">{getStatusLabel()}</p>
 
                                         <button onClick={toggleVoiceMode} disabled={!isConfigured}
                                             className={cn(
                                                 "mt-3 flex items-center gap-1.5 px-4 py-1.5 rounded-full text-[12px] font-medium transition border",
-                                                "bg-[#0a0a0b] text-white/80 border-black/10 hover:bg-[#1a1a1b]",
-                                                "dark:bg-white/[0.06] dark:text-white/70 dark:border-white/[0.08] dark:hover:bg-white/[0.1]",
+                                                "bg-foreground text-background border-border hover:bg-foreground/90",
                                                 !isConfigured && "opacity-40 cursor-not-allowed"
                                             )}>
                                             <Phone className="h-3 w-3" /> Voice mode
@@ -877,11 +990,11 @@ REGLES:
                                 </div>
 
                                 {/* Messages */}
-                                <div className="flex-1 overflow-y-auto p-3 space-y-2.5 min-h-[200px] max-h-[310px] bg-white dark:bg-[#0e0e10]">
+                                <div className="flex-1 overflow-y-auto p-3 space-y-2.5 min-h-[200px] max-h-[310px] bg-background">
                                     {messages.length === 0 ? (
                                         <div className="h-full flex flex-col items-center justify-center text-center px-8 py-6">
-                                            <p className="text-[13px] text-black/50 dark:text-white/40 mb-3">How can I help?</p>
-                                            <div className="space-y-1.5 text-[12px] text-black/25 dark:text-white/20">
+                                            <p className="text-[13px] text-muted-foreground mb-3">How can I help?</p>
+                                            <div className="space-y-1.5 text-[12px] text-muted-foreground/50">
                                                 <p>"Draft un mail pour Antoine Pinard"</p>
                                                 <p>"Quelles taches j'ai aujourd'hui ?"</p>
                                                 <p>"Resume mes mails non lus"</p>
@@ -891,18 +1004,18 @@ REGLES:
                                     ) : messages.map((msg, i) => (
                                         <div key={i}>
                                             {msg.role === 'action' && msg.action ? (
-                                                <div className="bg-[#0a0a0b] rounded-xl p-0.5">
+                                                <div className="bg-card rounded-lg p-0.5">
                                                     <ActionCard action={msg.action} id={i} />
                                                 </div>
                                             ) : msg.role === 'system' ? (
-                                                <p className="text-center text-[11px] text-black/20 dark:text-white/20 py-0.5">{msg.text}</p>
+                                                <p className="text-center text-[11px] text-muted-foreground/50 py-0.5">{msg.text}</p>
                                             ) : (
                                                 <div className={cn("flex", msg.role === 'user' ? "justify-end" : "justify-start")}>
                                                     <div className={cn(
-                                                        "max-w-[85%] rounded-2xl px-3.5 py-2 text-[13px] leading-relaxed",
+                                                        "max-w-[85%] rounded-lg px-3.5 py-2 text-[13px] leading-relaxed",
                                                         msg.role === 'user'
-                                                            ? "bg-[#0a0a0b] text-white/90"
-                                                            : "bg-[#f4f4f5] dark:bg-white/[0.04] text-black/70 dark:text-white/70"
+                                                            ? "bg-foreground text-background"
+                                                            : "bg-muted text-foreground"
                                                     )}>
                                                         <p className="whitespace-pre-wrap">{msg.text}</p>
                                                     </div>
@@ -912,9 +1025,9 @@ REGLES:
                                     ))}
                                     {isLoading && (
                                         <div className="flex justify-start">
-                                            <div className="bg-[#f4f4f5] dark:bg-white/[0.04] rounded-2xl px-4 py-2.5 flex items-center gap-2">
-                                                <Loader2 className="h-3.5 w-3.5 animate-spin text-black/30 dark:text-white/30" />
-                                                <span className="text-[12px] text-black/40 dark:text-white/30">Processing...</span>
+                                            <div className="bg-muted rounded-lg px-4 py-2.5 flex items-center gap-2">
+                                                <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" />
+                                                <span className="text-[12px] text-muted-foreground">Processing...</span>
                                             </div>
                                         </div>
                                     )}
@@ -922,20 +1035,20 @@ REGLES:
                                 </div>
 
                                 {/* Input */}
-                                <div className="p-3 border-t border-black/[0.04] dark:border-white/[0.06] bg-white dark:bg-[#111113]">
+                                <div className="p-3 border-t border-border bg-background">
                                     <form onSubmit={handleSubmit} className="flex items-center gap-2">
                                         <button type="button" onClick={toggleListening} disabled={isLoading || isSpeaking}
                                             className={cn("p-2 rounded-lg transition",
-                                                isListening ? "bg-red-500 text-white" :
-                                                "bg-[#f4f4f5] dark:bg-white/[0.04] text-black/40 dark:text-white/30 hover:text-black/60 dark:hover:text-white/50"
+                                                isListening ? "bg-foreground text-background" :
+                                                "bg-muted text-muted-foreground hover:text-foreground"
                                             )}>
                                             {isListening ? <MicOff className="h-4 w-4" /> : <Mic className="h-4 w-4" />}
                                         </button>
                                         <input type="text" value={inputText} onChange={e => setInputText(e.target.value)}
                                             placeholder={isListening ? "Listening..." : "Message..."}
-                                            className="flex-1 h-9 px-3 rounded-lg bg-[#f4f4f5] dark:bg-white/[0.04] border-0 text-[13px] text-black/80 dark:text-white/80 focus:outline-none focus:ring-1 focus:ring-black/10 dark:focus:ring-white/10 placeholder-black/25 dark:placeholder-white/20" />
+                                            className="flex-1 h-9 px-3 rounded-lg bg-muted border-0 text-[13px] text-foreground focus:outline-none focus:ring-1 focus:ring-border placeholder-muted-foreground" />
                                         <button type="submit" disabled={!inputText.trim() || isLoading}
-                                            className="p-2 rounded-lg bg-[#0a0a0b] dark:bg-white/[0.08] text-white dark:text-white/60 disabled:opacity-20 transition hover:bg-[#1a1a1b] dark:hover:bg-white/[0.12]">
+                                            className="p-2 rounded-lg bg-foreground text-background disabled:opacity-20 transition hover:bg-foreground/90">
                                             <Send className="h-4 w-4" />
                                         </button>
                                     </form>

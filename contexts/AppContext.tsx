@@ -11,9 +11,11 @@ interface AppContextType {
     closeTaskModal: () => void;
     taskModalCompanyId?: string;
     taskModalProjectId?: string;
-    
-    // Command Palette (controlled via hook in CommandPalette.tsx)
-    // Other global state can go here
+
+    // Quick Log Modal
+    isQuickLogOpen: boolean;
+    openQuickLog: () => void;
+    closeQuickLog: () => void;
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
@@ -22,6 +24,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const [isTaskModalOpen, setIsTaskModalOpen] = useState(false);
     const [taskModalCompanyId, setTaskModalCompanyId] = useState<string | undefined>();
     const [taskModalProjectId, setTaskModalProjectId] = useState<string | undefined>();
+    const [isQuickLogOpen, setIsQuickLogOpen] = useState(false);
 
     const openTaskModal = useCallback((companyId?: string, projectId?: string) => {
         setTaskModalCompanyId(companyId);
@@ -35,13 +38,19 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         setTaskModalProjectId(undefined);
     }, []);
 
+    const openQuickLog = useCallback(() => setIsQuickLogOpen(true), []);
+    const closeQuickLog = useCallback(() => setIsQuickLogOpen(false), []);
+
     return (
         <AppContext.Provider value={{
             isTaskModalOpen,
             openTaskModal,
             closeTaskModal,
             taskModalCompanyId,
-            taskModalProjectId
+            taskModalProjectId,
+            isQuickLogOpen,
+            openQuickLog,
+            closeQuickLog,
         }}>
             {children}
         </AppContext.Provider>

@@ -57,13 +57,13 @@ export const Kanban: React.FC = () => {
 
     const getColumnColor = (columnId: string) => {
         const colors: Record<string, string> = {
-            'entry_point': 'bg-slate-500',
-            'exchange': 'bg-blue-500',
-            'proposal': 'bg-orange-500',
-            'validation': 'bg-amber-500',
-            'client_success': 'bg-emerald-500',
+            'entry_point': 'bg-muted-foreground',
+            'exchange': 'bg-primary',
+            'proposal': 'bg-destructive',
+            'validation': 'bg-ring',
+            'client_success': 'bg-foreground',
         };
-        return colors[columnId] || 'bg-slate-500';
+        return colors[columnId] || 'bg-muted-foreground';
     };
 
     return (
@@ -81,7 +81,7 @@ export const Kanban: React.FC = () => {
                     return (
                         <div 
                             key={col.id} 
-                            className="w-[85vw] sm:w-80 flex-shrink-0 flex flex-col bg-muted/30 rounded-xl border border-border snap-center"
+                            className="w-[85vw] sm:w-80 flex-shrink-0 flex flex-col bg-muted/30 rounded-lg border border-border snap-center"
                             onDragOver={handleDragOver}
                             onDrop={(e) => handleDrop(e, col.id)}
                         >
@@ -102,7 +102,7 @@ export const Kanban: React.FC = () => {
                                         draggable
                                         onDragStart={(e) => handleDragStart(e, company.id)}
                                         className={cn(
-                                            "cursor-grab active:cursor-grabbing hover:shadow-md transition-all group relative",
+                                            "cursor-grab active:cursor-grabbing hover:shadow-sm transition-all group relative",
                                             draggingId === company.id && "opacity-50 scale-95"
                                         )}
                                     >
@@ -130,7 +130,7 @@ export const Kanban: React.FC = () => {
                                                     {openMenuId === company.id && (
                                                         <>
                                                             <div className="fixed inset-0 z-10" onClick={() => setOpenMenuId(null)} />
-                                                            <div className="absolute right-0 top-full mt-1 w-48 bg-popover border border-border rounded-lg shadow-lg z-20 overflow-hidden animate-in fade-in-0 zoom-in-95">
+                                                            <div className="absolute right-0 top-full mt-1 w-48 bg-popover border border-border rounded-lg shadow-sm z-20 overflow-hidden animate-in fade-in-0 zoom-in-95">
                                                                 <div className="px-3 py-2 text-xs font-semibold text-muted-foreground border-b border-border">
                                                                     Déplacer vers...
                                                                 </div>

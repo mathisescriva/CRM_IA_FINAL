@@ -2,10 +2,12 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { AppSidebar } from './AppSidebar';
 import { CommandPalette, useCommandPalette } from './CommandPalette';
-import { Search, Menu, WifiOff, Command, Bell, Check, X } from 'lucide-react';
+import { Search, Menu, WifiOff, Command, Bell, Check, X, PenLine } from 'lucide-react';
 import { VoiceAssistant } from './VoiceAssistant';
+import { QuickLogModal } from './QuickLogModal';
 import { isSupabaseConfigured } from '../services/supabase';
 import { workspaceService, type Notification as AppNotification } from '../services/workspace';
+import { useApp } from '../contexts/AppContext';
 import { Button } from './ui/Button';
 import { Badge } from './ui/Badge';
 import { cn, formatRelativeTime } from '../lib/utils';
@@ -50,8 +52,8 @@ const NotificationDropdown: React.FC = () => {
             >
                 <Bell className="h-5 w-5" />
                 {unreadCount > 0 && (
-                    <span className="absolute -top-0.5 -right-0.5 h-4 w-4 rounded-full bg-red-500 text-[10px] font-medium text-white flex items-center justify-center">
-                        {unreadCount}
+                    <span className="absolute -top-0.5 -right-0.5 min-h-4 min-w-4 px-0.5 rounded-full bg-foreground text-background text-[10px] font-medium flex items-center justify-center tabular-nums">
+                        {unreadCount > 9 ? '9+' : unreadCount}
                     </span>
                 )}
             </Button>
@@ -62,8 +64,8 @@ const NotificationDropdown: React.FC = () => {
                         className="fixed inset-0 z-40" 
                         onClick={() => setOpen(false)} 
                     />
-                    <div className="absolute right-0 top-full mt-2 w-80 z-50 bg-background border border-border rounded-xl shadow-lg overflow-hidden">
-                        <div className="flex items-center justify-between px-4 py-3 border-b border-border">
+                    <div className="absolute right-0 top-full mt-2 w-80 z-50 bg-popover text-popover-foreground border border-border rounded-lg shadow-md overflow-hidden">
+                        <div className="flex items-center justify-between px-4 py-2.5 border-b border-border">
                             <h3 className="font-medium">Notifications</h3>
                             {unreadCount > 0 && (
                                 <button 
@@ -85,13 +87,13 @@ const NotificationDropdown: React.FC = () => {
                                         key={notif.id}
                                         onClick={() => handleNotificationClick(notif)}
                                         className={cn(
-                                            "w-full flex items-start gap-3 p-3 text-left hover:bg-muted/50 transition-colors border-b border-border last:border-0",
-                                            !notif.read && "bg-primary/5"
+                                            "w-full flex items-start gap-3 p-3 text-left hover:bg-muted/60 transition-colors border-b border-border last:border-0",
+                                            !notif.read && "bg-muted/40"
                                         )}
                                     >
                                         <div className={cn(
-                                            "h-2 w-2 rounded-full mt-2 shrink-0",
-                                            notif.read ? "bg-transparent" : "bg-primary"
+                                            "h-1.5 w-1.5 rounded-full mt-2 shrink-0 ring-1 ring-border",
+                                            notif.read ? "bg-transparent ring-0" : "bg-foreground"
                                         )} />
                                         <div className="flex-1 min-w-0">
                                             <p className="text-sm font-medium">{notif.title}</p>
@@ -118,14 +120,13 @@ const ConnectionStatus: React.FC = () => {
     return (
         <div className="fixed bottom-4 right-20 z-40 hidden md:flex">
             <Badge 
-                variant={isLive ? "success" : "secondary"} 
-                className="shadow-lg backdrop-blur-sm bg-background/80 border"
+                variant="outline" 
+                className="shadow-sm bg-background/90 backdrop-blur-sm text-muted-foreground font-normal"
             >
                 {isLive ? (
                     <>
                         <span className="relative flex h-2 w-2 mr-1.5">
-                            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-                            <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+                            <span className="relative inline-flex rounded-full h-2 w-2 bg-foreground/70" />
                         </span>
                         Connecté
                     </>
@@ -157,6 +158,7 @@ const showDesktopNotification = (title: string, body: string) => {
 export const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
     const [sidebarOpen, setSidebarOpen] = useState(false);
     const { open: cmdOpen, setOpen: setCmdOpen } = useCommandPalette();
+    const { openQuickLog } = useApp();
 
     useEffect(() => {
         requestNotificationPermission();
@@ -176,9 +178,9 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
         <div className="min-h-screen bg-background">
             <AppSidebar isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} />
             
-            <div className="md:pl-64 flex flex-col min-h-screen">
+            <div className="md:pl-[240px] flex flex-col min-h-screen">
                 {/* Header */}
-                <header className="sticky top-0 z-30 flex h-14 items-center justify-between gap-4 border-b border-border bg-background/95 px-4 md:px-6 backdrop-blur supports-[backdrop-filter]:bg-background/60">
+                <header className="sticky top-0 z-30 flex h-12 items-center justify-between gap-4 border-b border-border bg-background/80 px-4 md:px-6 backdrop-blur-md supports-[backdrop-filter]:bg-background/70">
                     <div className="flex items-center gap-4">
                         <Button 
                             variant="ghost" 
@@ -191,12 +193,13 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
                         
                         {/* Search Button - Opens Command Palette */}
                         <button
+                            type="button"
                             onClick={() => setCmdOpen(true)}
-                            className="hidden md:flex items-center gap-2 h-9 px-3 rounded-lg bg-muted/50 border border-transparent hover:border-border transition-colors text-sm text-muted-foreground"
+                            className="hidden md:flex items-center gap-2 h-8 max-w-md w-[min(100%,20rem)] px-2.5 rounded-md border border-border bg-background text-[13px] text-muted-foreground hover:text-foreground hover:bg-muted/40 transition-colors"
                         >
-                            <Search className="h-4 w-4" />
-                            <span>Rechercher...</span>
-                            <kbd className="ml-6 inline-flex h-5 select-none items-center gap-1 rounded border border-border bg-muted px-1.5 font-mono text-[10px] font-medium">
+                            <Search className="h-3.5 w-3.5 shrink-0 opacity-60" />
+                            <span className="flex-1 text-left">Rechercher…</span>
+                            <kbd className="hidden sm:inline-flex h-5 select-none items-center gap-0.5 rounded border border-border bg-muted/80 px-1.5 font-mono text-[10px] font-medium text-muted-foreground">
                                 <Command className="h-3 w-3" />K
                             </kbd>
                         </button>
@@ -229,6 +232,18 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
 
             {/* Command Palette */}
             <CommandPalette open={cmdOpen} onClose={() => setCmdOpen(false)} />
+
+            {/* Quick Log floating button */}
+            <button
+                onClick={openQuickLog}
+                className="fixed bottom-24 right-6 z-40 h-10 w-10 rounded-full bg-foreground text-background shadow-sm flex items-center justify-center hover:opacity-90 transition-opacity"
+                title="Log rapide"
+            >
+                <PenLine className="h-4 w-4" />
+            </button>
+
+            {/* Quick Log Modal */}
+            <QuickLogModal />
 
             {/* Global AI Voice Assistant */}
             <VoiceAssistant />

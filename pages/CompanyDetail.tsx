@@ -15,6 +15,7 @@ import { companyService } from '../services/supabase';
 import { workspaceService, Task } from '../services/workspace';
 import { authService, LEXIA_TEAM } from '../services/auth';
 import { gmailService } from '../services/gmail';
+import { googleDriveService } from '../services/googleDrive';
 import { calendarService } from '../services/calendar';
 import { MentionInput } from '../components/MentionInput';
 import { ScheduleMeetingModal } from '../components/ScheduleMeetingModal';
@@ -53,7 +54,7 @@ export const CompanyDetail: React.FC = () => {
         importance: 'medium' as Priority,
         generalComment: ''
     });
-    const [contactForm, setContactForm] = useState({ name: '', email: '', role: '', phone: '', isMain: false });
+    const [contactForm, setContactForm] = useState({ name: '', email: '', role: '', phone: '', notes: '', isMain: false });
     const [editingContactId, setEditingContactId] = useState<string | null>(null);
     
     // Team modal
@@ -68,7 +69,7 @@ export const CompanyDetail: React.FC = () => {
     const [selectedDocument, setSelectedDocument] = useState<CompanyDocument | null>(null);
     
     // Tab navigation
-    const [activeTab, setActiveTab] = useState<'overview' | 'contacts' | 'activity' | 'documents' | 'emails' | 'projects'>('overview');
+    const [activeTab, setActiveTab] = useState<'overview' | 'timeline' | 'contacts' | 'activity' | 'documents' | 'emails' | 'projects'>('overview');
     
     // Company projects (= deals) & tasks
     const [companyTasks, setCompanyTasks] = useState<Task[]>([]);
@@ -329,7 +330,7 @@ export const CompanyDetail: React.FC = () => {
 
     const openAddContact = () => {
         setEditingContactId(null);
-        setContactForm({ name: '', email: '', role: '', phone: '', isMain: false });
+        setContactForm({ name: '', email: '', role: '', phone: '', notes: '', isMain: false });
         setShowContactModal(true);
     };
 
@@ -340,6 +341,7 @@ export const CompanyDetail: React.FC = () => {
             email: contact.emails[0] || '',
             role: contact.role,
             phone: contact.phone || '',
+            notes: (contact as any).notes || '',
             isMain: contact.isMainContact || false
         });
         setShowContactModal(true);
@@ -351,9 +353,10 @@ export const CompanyDetail: React.FC = () => {
 
         const contactData = {
             name: contactForm.name,
-            emails: [contactForm.email],
+            emails: contactForm.email ? [contactForm.email] : [],
             role: contactForm.role,
             phone: contactForm.phone,
+            notes: contactForm.notes,
             isMainContact: contactForm.isMain
         };
 
@@ -434,6 +437,14 @@ export const CompanyDetail: React.FC = () => {
         }
     };
 
+    // Drive states
+    const [uploadingDoc, setUploadingDoc] = useState(false);
+    const [showDriveBrowser, setShowDriveBrowser] = useState(false);
+    const [driveFiles, setDriveFiles] = useState<any[]>([]);
+    const [driveSearch, setDriveSearch] = useState('');
+    const [loadingDrive, setLoadingDrive] = useState(false);
+    const fileInputRef = React.useRef<HTMLInputElement>(null);
+
     // Document handlers
     const handleAddDocument = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -449,6 +460,55 @@ export const CompanyDetail: React.FC = () => {
         setDocumentForm({ name: '', url: '', type: 'pdf' });
         const updated = await companyService.getById(company.id);
         if (updated) setCompany(updated);
+    };
+
+    const handleFileUpload = async (files: FileList) => {
+        if (!company) return;
+        setUploadingDoc(true);
+        try {
+            for (let i = 0; i < files.length; i++) {
+                const f = files[i];
+                const uploaded = await googleDriveService.uploadFile(f, company.name);
+                const type = googleDriveService.getFileType(uploaded.mimeType) as any;
+                await companyService.addDocument(company.id, {
+                    name: uploaded.name,
+                    url: uploaded.webViewLink || `https://drive.google.com/file/d/${uploaded.id}/view`,
+                    type,
+                });
+            }
+            const updated = await companyService.getById(company.id);
+            if (updated) setCompany(updated);
+        } catch (e) {
+            console.error('Upload to Drive failed:', e);
+        }
+        setUploadingDoc(false);
+    };
+
+    const loadDriveFiles = async (query?: string) => {
+        setLoadingDrive(true);
+        try {
+            const files = query
+                ? await googleDriveService.searchFiles(query)
+                : await googleDriveService.listAllFiles();
+            setDriveFiles(files);
+        } catch (e) {
+            console.error('Failed to load Drive files:', e);
+            setDriveFiles([]);
+        }
+        setLoadingDrive(false);
+    };
+
+    const handleLinkDriveFile = async (file: any) => {
+        if (!company) return;
+        const type = googleDriveService.getFileType(file.mimeType) as any;
+        await companyService.addDocument(company.id, {
+            name: file.name,
+            url: file.webViewLink || `https://drive.google.com/file/d/${file.id}/view`,
+            type,
+        });
+        const updated = await companyService.getById(company.id);
+        if (updated) setCompany(updated);
+        setShowDriveBrowser(false);
     };
 
     const handleRemoveDocument = async (docId: string) => {
@@ -485,13 +545,12 @@ export const CompanyDetail: React.FC = () => {
                 </button>
                 <div className="flex items-center gap-4 flex-1">
                     <div className={cn(
-                        "h-12 w-12 rounded-xl flex items-center justify-center overflow-hidden",
-                        isPartner ? "bg-purple-100 dark:bg-purple-950" : "bg-muted"
+                        "h-12 w-12 rounded-lg flex items-center justify-center overflow-hidden bg-muted"
                     )}>
                         {company.logoUrl ? (
                             <img src={company.logoUrl} alt="" className="h-full w-full object-cover" />
                         ) : isPartner ? (
-                            <Handshake className="h-6 w-6 text-purple-600 dark:text-purple-400" />
+                            <Handshake className="h-6 w-6 text-muted-foreground" />
                         ) : (
                             <span className="font-bold text-muted-foreground">{getInitials(company.name)}</span>
                         )}
@@ -500,10 +559,7 @@ export const CompanyDetail: React.FC = () => {
                         <div className="flex items-center gap-2">
                             <h1 className="text-xl font-semibold">{company.name}</h1>
                             <span className={cn(
-                                "inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium",
-                                isPartner 
-                                    ? "bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400" 
-                                    : "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400"
+                                "inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium bg-muted text-foreground"
                             )}>
                                 {isPartner ? <Handshake className="h-3 w-3" /> : <Users className="h-3 w-3" />}
                                 {isPartner ? 'Partenaire' : 'Client'}
@@ -515,7 +571,7 @@ export const CompanyDetail: React.FC = () => {
                                     <Globe className="h-3.5 w-3.5" /> {company.website}
                                 </a>
                             )}
-                            <span className={cn("flex items-center gap-1", isUrgent && "text-orange-500")}>
+                            <span className={cn("flex items-center gap-1", isUrgent && "text-foreground font-medium")}>
                                 <Clock className="h-3.5 w-3.5" /> 
                                 {daysSinceContact === 0 ? "Aujourd'hui" : `${daysSinceContact}j`}
                             </span>
@@ -553,8 +609,8 @@ export const CompanyDetail: React.FC = () => {
                                         onClick={() => handleStageChange(col.id)}
                                         className={cn(
                                             "flex items-center gap-2 px-4 py-2 rounded-full text-sm font-medium transition-all",
-                                            isCurrent && "bg-primary text-primary-foreground",
-                                            isCompleted && "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400",
+                                            isCurrent && "bg-foreground text-background",
+                                            isCompleted && "bg-foreground/5 text-foreground",
                                             !isCurrent && !isCompleted && "bg-muted text-muted-foreground hover:bg-muted/80"
                                         )}
                                     >
@@ -574,32 +630,32 @@ export const CompanyDetail: React.FC = () => {
             {/* Partner Stats (Partners only) */}
             {isPartner && (
                 <div className="mb-8 grid grid-cols-3 gap-4">
-                    <div className="bg-purple-50 dark:bg-purple-950/20 border border-purple-200 dark:border-purple-900/50 rounded-xl p-4">
+                    <div className="bg-muted border border-border rounded-lg p-4">
                         <div className="flex items-center gap-2 mb-2">
-                            <Calendar className="h-4 w-4 text-purple-500" />
-                            <span className="text-xs font-medium text-purple-600 dark:text-purple-400">Partenaire depuis</span>
+                            <Calendar className="h-4 w-4 text-muted-foreground" />
+                            <span className="text-xs font-medium text-muted-foreground">Partenaire depuis</span>
                         </div>
-                        <p className="text-lg font-semibold text-purple-900 dark:text-purple-100">
+                        <p className="text-lg font-semibold text-foreground">
                             {company.partnerSince 
                                 ? new Date(company.partnerSince).toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' })
                                 : '-'}
                         </p>
                     </div>
-                    <div className="bg-green-50 dark:bg-green-950/20 border border-green-200 dark:border-green-900/50 rounded-xl p-4">
+                    <div className="bg-muted border border-border rounded-lg p-4">
                         <div className="flex items-center gap-2 mb-2">
-                            <TrendingUp className="h-4 w-4 text-green-500" />
-                            <span className="text-xs font-medium text-green-600 dark:text-green-400">Deals apportés</span>
+                            <TrendingUp className="h-4 w-4 text-muted-foreground" />
+                            <span className="text-xs font-medium text-muted-foreground">Deals apportés</span>
                         </div>
-                        <p className="text-lg font-semibold text-green-900 dark:text-green-100">
+                        <p className="text-lg font-semibold text-foreground">
                             {company.referralsCount || 0}
                         </p>
                     </div>
-                    <div className="bg-amber-50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-900/50 rounded-xl p-4">
+                    <div className="bg-muted border border-border rounded-lg p-4">
                         <div className="flex items-center gap-2 mb-2">
-                            <Percent className="h-4 w-4 text-amber-500" />
-                            <span className="text-xs font-medium text-amber-600 dark:text-amber-400">Commission</span>
+                            <Percent className="h-4 w-4 text-muted-foreground" />
+                            <span className="text-xs font-medium text-muted-foreground">Commission</span>
                         </div>
-                        <p className="text-lg font-semibold text-amber-900 dark:text-amber-100">
+                        <p className="text-lg font-semibold text-foreground">
                             {company.commissionRate ? `${company.commissionRate}%` : '-'}
                         </p>
                     </div>
@@ -608,14 +664,14 @@ export const CompanyDetail: React.FC = () => {
 
             {/* Alert if urgent (only for clients) */}
             {isUrgent && !isPartner && (
-                <div className="mb-6 p-4 rounded-xl bg-orange-50 dark:bg-orange-950/20 border border-orange-200 dark:border-orange-900/50 flex items-center gap-3">
-                    <AlertCircle className="h-5 w-5 text-orange-500" />
-                    <p className="text-sm text-orange-700 dark:text-orange-400">
+                <div className="mb-6 p-4 rounded-lg bg-muted border border-border flex items-center gap-3">
+                    <AlertCircle className="h-5 w-5 text-muted-foreground" />
+                    <p className="text-sm text-foreground">
                         Aucun contact depuis {daysSinceContact} jours. Pensez à relancer.
                     </p>
                     <button 
                         onClick={() => navigate('/inbox')}
-                        className="ml-auto px-3 py-1.5 bg-orange-500 text-white rounded-lg text-xs font-medium"
+                        className="ml-auto px-3 py-1.5 bg-foreground text-background rounded-lg text-xs font-medium"
                     >
                         Relancer
                     </button>
@@ -626,9 +682,9 @@ export const CompanyDetail: React.FC = () => {
             <div className="flex items-center gap-1 mb-6 border-b border-border pb-px overflow-x-auto">
                 {[
                     { id: 'overview' as const, label: 'Vue d\'ensemble', icon: Building2 },
+                    { id: 'timeline' as const, label: 'Timeline', icon: Clock },
                     { id: 'projects' as const, label: `Projets (${companyProjects.length})`, icon: FolderKanban },
                     { id: 'contacts' as const, label: `Contacts (${company.contacts.length})`, icon: User },
-                    { id: 'activity' as const, label: 'Activité', icon: Clock },
                     { id: 'documents' as const, label: `Documents (${company.documents.length})`, icon: FileText },
                     { id: 'emails' as const, label: 'Emails', icon: Mail },
                 ].map(tab => {
@@ -651,9 +707,23 @@ export const CompanyDetail: React.FC = () => {
                 })}
             </div>
 
-            <div className="grid grid-cols-3 gap-6">
+            <div className={cn("gap-6", activeTab === 'timeline' ? "block" : "grid grid-cols-3")}>
                 {/* Main content */}
-                <div className="col-span-2 space-y-6">
+                <div className={cn(activeTab === 'timeline' ? "" : "col-span-2", "space-y-6")}>
+
+                    {/* TIMELINE TAB */}
+                    {activeTab === 'timeline' && (
+                        <CompanyTimeline
+                            company={company}
+                            emails={companyEmails}
+                            tasks={companyTasks}
+                            projects={companyProjects}
+                            meetings={upcomingMeetings}
+                            loadingEmails={loadingEmails}
+                            isGmailConnected={isGmailConnected}
+                        />
+                    )}
+
                     {/* Overview: Projects summary */}
                     {activeTab === 'overview' && (
                         <Card>
@@ -674,11 +744,11 @@ export const CompanyDetail: React.FC = () => {
                                 <div className="space-y-3 mb-4">
                                     {companyProjects.slice(0, 3).map(proj => {
                                         const stageLabels: Record<string, string> = { qualification: 'Qualification', proposal: 'Proposition', negotiation: 'Négociation', closed_won: 'Gagné', closed_lost: 'Perdu' };
-                                        const stageColors: Record<string, string> = { qualification: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400', proposal: 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400', negotiation: 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400', closed_won: 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400', closed_lost: 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400' };
+                                        const stageColors: Record<string, string> = { qualification: 'bg-muted text-foreground', proposal: 'bg-muted text-foreground', negotiation: 'bg-muted text-foreground', closed_won: 'bg-foreground/5 text-foreground', closed_lost: 'bg-foreground/5 text-muted-foreground' };
                                         return (
                                             <div 
                                                 key={proj.id} 
-                                                className="p-3 rounded-lg border border-border hover:shadow-sm hover:border-primary/30 transition-all cursor-pointer" 
+                                                className="p-3 rounded-lg border border-border hover:shadow-sm hover:border-border transition-all cursor-pointer" 
                                                 onClick={() => navigate(`/projects?id=${proj.id}`)}
                                             >
                                                 <div className="flex items-center justify-between mb-2">
@@ -720,13 +790,13 @@ export const CompanyDetail: React.FC = () => {
                             )}
                             {/* Quick KPIs */}
                             <div className="grid grid-cols-3 gap-3">
-                                <div className="p-3 rounded-lg bg-blue-50 dark:bg-blue-950/20 border border-blue-100 dark:border-blue-900/30 text-center">
-                                    <p className="text-lg font-bold text-blue-700 dark:text-blue-400">{companyProjects.filter(p => p.stage !== 'closed_won' && p.stage !== 'closed_lost').length}</p>
-                                    <p className="text-[10px] text-blue-600/70 dark:text-blue-400/70">En cours</p>
+                                <div className="p-3 rounded-lg bg-muted border border-border text-center">
+                                    <p className="text-lg font-bold text-foreground">{companyProjects.filter(p => p.stage !== 'closed_won' && p.stage !== 'closed_lost').length}</p>
+                                    <p className="text-[10px] text-muted-foreground">En cours</p>
                                 </div>
-                                <div className="p-3 rounded-lg bg-green-50 dark:bg-green-950/20 border border-green-100 dark:border-green-900/30 text-center">
-                                    <p className="text-lg font-bold text-green-700 dark:text-green-400">{companyProjects.filter(p => p.stage === 'closed_won').reduce((s, p) => s + p.budget, 0).toLocaleString('fr-FR')}€</p>
-                                    <p className="text-[10px] text-green-600/70 dark:text-green-400/70">Signés</p>
+                                <div className="p-3 rounded-lg bg-muted border border-border text-center">
+                                    <p className="text-lg font-bold text-foreground">{companyProjects.filter(p => p.stage === 'closed_won').reduce((s, p) => s + p.budget, 0).toLocaleString('fr-FR')}€</p>
+                                    <p className="text-[10px] text-muted-foreground">Signés</p>
                                 </div>
                                 <div className="p-3 rounded-lg bg-muted/50 text-center">
                                     <p className="text-lg font-bold">{companyProjects.reduce((s, p) => s + p.budget, 0).toLocaleString('fr-FR')}€</p>
@@ -755,9 +825,9 @@ export const CompanyDetail: React.FC = () => {
                             {companyProjects.length === 0 ? (
                                 <button 
                                     onClick={() => setShowProjectModal(true)}
-                                    className="w-full py-12 border-2 border-dashed rounded-xl text-sm text-muted-foreground hover:border-primary hover:text-primary transition-all flex flex-col items-center gap-3"
+                                    className="w-full py-12 border-2 border-dashed rounded-lg text-sm text-muted-foreground hover:border-foreground hover:text-foreground transition-all flex flex-col items-center gap-3"
                                 >
-                                    <div className="h-12 w-12 rounded-xl bg-primary/10 flex items-center justify-center">
+                                    <div className="h-12 w-12 rounded-lg bg-muted flex items-center justify-center">
                                         <FolderKanban className="h-6 w-6 text-primary" />
                                     </div>
                                     <div>
@@ -769,13 +839,13 @@ export const CompanyDetail: React.FC = () => {
                                 <div className="space-y-3">
                                     {companyProjects.map(proj => {
                                         const stageLabels: Record<string, string> = { qualification: 'Qualification', proposal: 'Proposition', negotiation: 'Négociation', closed_won: 'Gagné', closed_lost: 'Perdu' };
-                                        const stageColors: Record<string, string> = { qualification: 'bg-blue-500', proposal: 'bg-orange-500', negotiation: 'bg-purple-500', closed_won: 'bg-green-500', closed_lost: 'bg-red-500' };
-                                        const stageBadgeColors: Record<string, string> = { qualification: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400', proposal: 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400', negotiation: 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400', closed_won: 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400', closed_lost: 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400' };
+                                        const stageColors: Record<string, string> = { qualification: 'bg-foreground/20', proposal: 'bg-foreground/30', negotiation: 'bg-foreground/40', closed_won: 'bg-foreground', closed_lost: 'bg-foreground/10' };
+                                        const stageBadgeColors: Record<string, string> = { qualification: 'bg-muted text-foreground', proposal: 'bg-muted text-foreground', negotiation: 'bg-muted text-foreground', closed_won: 'bg-foreground/5 text-foreground', closed_lost: 'bg-foreground/5 text-muted-foreground' };
                                         return (
                                             <div 
                                                 key={proj.id}
                                                 onClick={() => navigate(`/projects?id=${proj.id}`)}
-                                                className="group p-4 rounded-xl border border-border hover:border-primary/40 hover:shadow-md transition-all cursor-pointer"
+                                                className="group p-4 rounded-lg border border-border hover:border-border hover:shadow-sm transition-all cursor-pointer"
                                             >
                                                 <div className="flex items-start gap-4">
                                                     {/* Stage indicator */}
@@ -844,7 +914,7 @@ export const CompanyDetail: React.FC = () => {
                     {(activeTab === 'overview' || activeTab === 'activity') && <Card>
                         <div className="flex items-center justify-between mb-4">
                             <div className="flex items-center gap-2">
-                                <Calendar className="h-4 w-4 text-purple-500" />
+                                <Calendar className="h-4 w-4 text-muted-foreground" />
                                 <h2 className="font-medium">Prochaines réunions</h2>
                             </div>
                             <button 
@@ -894,9 +964,9 @@ export const CompanyDetail: React.FC = () => {
                         ) : (
                             <div className="space-y-3">
                                 {upcomingMeetings.map((meeting, idx) => (
-                                    <div key={meeting.id || idx} className="flex items-start gap-3 p-3 rounded-lg bg-purple-50/50 dark:bg-purple-950/20 border border-purple-100 dark:border-purple-900/30">
-                                        <div className="h-8 w-8 rounded-lg bg-purple-100 dark:bg-purple-900/30 flex items-center justify-center shrink-0">
-                                            <Calendar className="h-4 w-4 text-purple-600 dark:text-purple-400" />
+                                    <div key={meeting.id || idx} className="flex items-start gap-3 p-3 rounded-lg bg-muted border border-border">
+                                        <div className="h-8 w-8 rounded-lg bg-foreground/5 flex items-center justify-center shrink-0">
+                                            <Calendar className="h-4 w-4 text-muted-foreground" />
                                         </div>
                                         <div className="flex-1 min-w-0">
                                             <p className="text-sm font-medium truncate">{meeting.summary || 'Sans titre'}</p>
@@ -916,7 +986,7 @@ export const CompanyDetail: React.FC = () => {
                                                     href={meeting.hangoutLink} 
                                                     target="_blank" 
                                                     rel="noopener noreferrer"
-                                                    className="text-xs text-purple-600 hover:underline flex items-center gap-1 mt-1"
+                                                    className="text-xs text-foreground hover:underline flex items-center gap-1 mt-1"
                                                 >
                                                     <ExternalLink className="h-3 w-3" /> Rejoindre
                                                 </a>
@@ -932,7 +1002,7 @@ export const CompanyDetail: React.FC = () => {
                     {(activeTab === 'overview' || activeTab === 'emails') && <Card>
                         <div className="flex items-center justify-between mb-4">
                             <div className="flex items-center gap-2">
-                                <Mail className="h-4 w-4 text-blue-500" />
+                                <Mail className="h-4 w-4 text-muted-foreground" />
                                 <h2 className="font-medium">Historique des échanges</h2>
                             </div>
                             <div className="flex items-center gap-2">
@@ -989,7 +1059,7 @@ export const CompanyDetail: React.FC = () => {
                                     </p>
                                 )}
                                 {company.contacts.flatMap(c => c.emails).filter(Boolean).length === 0 && (
-                                    <p className="text-xs text-amber-600 mt-1">
+                                    <p className="text-xs text-muted-foreground mt-1">
                                         Aucun email associé aux contacts
                                     </p>
                                 )}
@@ -1003,10 +1073,7 @@ export const CompanyDetail: React.FC = () => {
                                         onClick={() => navigate('/inbox', { state: { selectedMessageId: email.id } })}
                                     >
                                         <div className={cn(
-                                            "h-8 w-8 rounded-lg flex items-center justify-center shrink-0 mt-0.5",
-                                            email.isInbound 
-                                                ? "bg-blue-100 text-blue-600 dark:bg-blue-900/30" 
-                                                : "bg-emerald-100 text-emerald-600 dark:bg-emerald-900/30"
+                                            "h-8 w-8 rounded-lg flex items-center justify-center shrink-0 mt-0.5 bg-muted text-muted-foreground"
                                         )}>
                                             {email.isInbound ? <Inbox className="h-4 w-4" /> : <Send className="h-4 w-4" />}
                                         </div>
@@ -1014,10 +1081,7 @@ export const CompanyDetail: React.FC = () => {
                                             <div className="flex items-center gap-2">
                                                 <p className="text-sm font-medium truncate">{email.subject}</p>
                                                 <span className={cn(
-                                                    "text-[10px] px-1.5 py-0.5 rounded",
-                                                    email.isInbound 
-                                                        ? "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400"
-                                                        : "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400"
+                                                    "text-[10px] px-1.5 py-0.5 rounded bg-muted text-muted-foreground"
                                                 )}>
                                                     {email.isInbound ? 'Reçu' : 'Envoyé'}
                                                 </span>
@@ -1105,11 +1169,7 @@ export const CompanyDetail: React.FC = () => {
                                 {company.activities.slice(0, 5).map(act => (
                                     <div key={act.id} className="flex items-start gap-3">
                                         <div className={cn(
-                                            "h-7 w-7 rounded-lg flex items-center justify-center shrink-0 mt-0.5",
-                                            act.type === 'email' ? "bg-blue-50 text-blue-500 dark:bg-blue-900/20" :
-                                            act.type === 'call' ? "bg-green-50 text-green-500 dark:bg-green-900/20" :
-                                            act.type === 'meeting' ? "bg-purple-50 text-purple-500 dark:bg-purple-900/20" :
-                                            "bg-muted text-muted-foreground"
+                                            "h-7 w-7 rounded-lg flex items-center justify-center shrink-0 mt-0.5 bg-muted text-muted-foreground"
                                         )}>
                                             {act.type === 'email' ? <Mail className="h-3.5 w-3.5" /> :
                                              act.type === 'call' ? <Phone className="h-3.5 w-3.5" /> :
@@ -1172,7 +1232,7 @@ export const CompanyDetail: React.FC = () => {
                                                 <div className="flex items-center gap-2">
                                                     <p className="font-medium text-sm truncate">{contact.name}</p>
                                                     {contact.isMainContact && (
-                                                        <span className="text-[9px] px-1.5 py-0.5 rounded bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-500">
+                                                        <span className="text-[9px] px-1.5 py-0.5 rounded bg-muted text-foreground">
                                                             Principal
                                                         </span>
                                                     )}
@@ -1188,7 +1248,7 @@ export const CompanyDetail: React.FC = () => {
                                                 </button>
                                                 <button 
                                                     onClick={() => handleDeleteContact(contact.id)}
-                                                    className="p-1.5 hover:bg-red-50 hover:text-red-500 rounded dark:hover:bg-red-900/20"
+                                                    className="p-1.5 hover:bg-muted hover:text-foreground rounded"
                                                 >
                                                     <Trash2 className="h-3 w-3" />
                                                 </button>
@@ -1255,7 +1315,7 @@ export const CompanyDetail: React.FC = () => {
                                             </div>
                                             <button 
                                                 onClick={() => handleRemoveTeamMember(m.id)}
-                                                className="p-1 hover:bg-red-50 hover:text-red-500 rounded opacity-0 group-hover:opacity-100 transition-opacity dark:hover:bg-red-900/20"
+                                                className="p-1 hover:bg-muted hover:text-foreground rounded opacity-0 group-hover:opacity-100 transition-opacity"
                                             >
                                                 <X className="h-3 w-3" />
                                             </button>
@@ -1273,50 +1333,72 @@ export const CompanyDetail: React.FC = () => {
                                 Documents {company.documents?.length > 0 && `(${company.documents.length})`}
                             </h2>
                             <div className="flex items-center gap-2">
-                                {company.documents?.length > 0 && (
-                                    <button 
-                                        onClick={() => setShowDocumentViewer(true)}
-                                        className="text-xs text-muted-foreground hover:text-foreground"
-                                    >
-                                        Voir tout
-                                    </button>
-                                )}
-                                <button 
-                                    onClick={() => setShowDocumentModal(true)}
-                                    className="text-xs text-primary hover:underline flex items-center gap-1"
-                                >
-                                    <Plus className="h-3 w-3" /> Ajouter
+                                <a href={googleDriveService.getSharedFolderUrl()} target="_blank" rel="noreferrer"
+                                    className="text-xs text-muted-foreground hover:text-foreground flex items-center gap-1">
+                                    <ExternalLink className="h-3 w-3" /> Drive
+                                </a>
+                                <button onClick={() => { setShowDriveBrowser(true); loadDriveFiles(); }}
+                                    className="text-xs text-muted-foreground hover:text-foreground flex items-center gap-1">
+                                    Parcourir
                                 </button>
+                                <button onClick={() => fileInputRef.current?.click()}
+                                    disabled={uploadingDoc}
+                                    className="text-xs text-primary hover:underline flex items-center gap-1">
+                                    {uploadingDoc ? <Loader2 className="h-3 w-3 animate-spin" /> : <Upload className="h-3 w-3" />} Upload
+                                </button>
+                                <button onClick={() => setShowDocumentModal(true)}
+                                    className="text-xs text-primary hover:underline flex items-center gap-1">
+                                    <Plus className="h-3 w-3" /> Lien
+                                </button>
+                                <input ref={fileInputRef} type="file" multiple className="hidden"
+                                    onChange={e => { if (e.target.files?.length) handleFileUpload(e.target.files); e.target.value = ''; }} />
                             </div>
                         </div>
-                        {(!company.documents || company.documents.length === 0) ? (
+                        {uploadingDoc && (
+                            <div className="flex items-center gap-2 p-2 rounded-lg bg-primary/5 border border-primary/10 text-xs mb-2">
+                                <Loader2 className="h-3.5 w-3.5 animate-spin text-primary" />
+                                <span className="text-primary font-medium">Upload vers Google Drive...</span>
+                            </div>
+                        )}
+                        {(!company.documents || company.documents.length === 0) && !uploadingDoc ? (
                             <button 
-                                onClick={() => setShowDocumentModal(true)}
+                                onClick={() => fileInputRef.current?.click()}
                                 className="w-full py-4 border border-dashed rounded-lg text-sm text-muted-foreground hover:border-primary hover:text-primary transition-colors"
                             >
-                                + Ajouter un document
+                                Uploader un fichier sur Google Drive
                             </button>
                         ) : (
                             <div className="space-y-2">
-                                {company.documents.slice(0, 3).map(doc => (
-                                    <div 
-                                        key={doc.id}
-                                        onClick={() => { setSelectedDocument(doc); setShowDocumentViewer(true); }}
-                                        className="flex items-center gap-2 p-2 rounded-lg hover:bg-muted text-sm group cursor-pointer"
-                                    >
-                                        <FileText className="h-4 w-4 text-muted-foreground shrink-0" />
-                                        <span className="truncate flex-1">{doc.name}</span>
-                                        <button 
-                                            onClick={(e) => { e.stopPropagation(); handleRemoveDocument(doc.id); }}
-                                            className="p-1 hover:bg-red-50 hover:text-red-500 rounded opacity-0 group-hover:opacity-100 transition-opacity dark:hover:bg-red-900/20"
+                                {company.documents.slice(0, activeTab === 'documents' ? 999 : 3).map(doc => {
+                                    const isDriveLink = doc.url?.includes('drive.google.com') || doc.url?.includes('docs.google.com');
+                                    return (
+                                        <div 
+                                            key={doc.id}
+                                            onClick={() => doc.url && doc.url !== '#' ? window.open(doc.url, '_blank') : null}
+                                            className="flex items-center gap-2 p-2 rounded-lg hover:bg-muted text-sm group cursor-pointer"
                                         >
-                                            <Trash2 className="h-3 w-3" />
-                                        </button>
-                                    </div>
-                                ))}
-                                {company.documents.length > 3 && (
+                                            <FileText className="h-4 w-4 text-muted-foreground shrink-0" />
+                                            <span className="truncate flex-1">{doc.name}</span>
+                                            {isDriveLink && <span className="text-[10px] text-muted-foreground font-medium">Drive</span>}
+                                            <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity" onClick={e => e.stopPropagation()}>
+                                                {doc.url && doc.url !== '#' && (
+                                                    <a href={doc.url} target="_blank" rel="noreferrer" className="p-1 hover:bg-muted rounded">
+                                                        <ExternalLink className="h-3 w-3 text-muted-foreground" />
+                                                    </a>
+                                                )}
+                                                <button 
+                                                    onClick={() => handleRemoveDocument(doc.id)}
+                                                    className="p-1 hover:bg-muted hover:text-foreground rounded"
+                                                >
+                                                    <Trash2 className="h-3 w-3" />
+                                                </button>
+                                            </div>
+                                        </div>
+                                    );
+                                })}
+                                {activeTab !== 'documents' && company.documents.length > 3 && (
                                     <button 
-                                        onClick={() => setShowDocumentViewer(true)}
+                                        onClick={() => setActiveTab('documents')}
                                         className="w-full text-xs text-primary hover:underline py-1"
                                     >
                                         +{company.documents.length - 3} autres documents
@@ -1340,8 +1422,8 @@ export const CompanyDetail: React.FC = () => {
             {/* Activity Modal */}
             {showActivityModal && (
                 <>
-                    <div className="fixed inset-0 z-50 bg-black/50" onClick={() => setShowActivityModal(false)} />
-                    <div className="fixed inset-x-4 top-[20%] z-50 mx-auto max-w-md bg-background border rounded-xl shadow-xl p-5">
+                    <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm" onClick={() => setShowActivityModal(false)} />
+                    <div className="fixed inset-x-4 top-[20%] z-50 mx-auto max-w-md bg-background border rounded-lg shadow-sm p-5">
                         <div className="flex items-center justify-between mb-4">
                             <h2 className="font-medium">Nouvelle interaction</h2>
                             <button onClick={() => setShowActivityModal(false)} className="p-1 hover:bg-muted rounded">
@@ -1409,8 +1491,8 @@ export const CompanyDetail: React.FC = () => {
             {/* Edit Company Modal */}
             {showEditModal && (
                 <>
-                    <div className="fixed inset-0 z-50 bg-black/50" onClick={() => setShowEditModal(false)} />
-                    <div className="fixed inset-x-4 top-[10%] z-50 mx-auto max-w-lg bg-background border rounded-xl shadow-xl overflow-hidden">
+                    <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm" onClick={() => setShowEditModal(false)} />
+                    <div className="fixed inset-x-4 top-[10%] z-50 mx-auto max-w-lg bg-background border rounded-lg shadow-sm overflow-hidden">
                         <div className="flex items-center justify-between px-5 py-4 border-b">
                             <div className="flex items-center gap-3">
                                 <Building2 className="h-5 w-5 text-muted-foreground" />
@@ -1425,7 +1507,7 @@ export const CompanyDetail: React.FC = () => {
                             <div>
                                 <label className="block text-sm font-medium mb-2">Logo de l'entreprise</label>
                                 <div className="flex items-center gap-4">
-                                    <div className="h-20 w-20 rounded-xl bg-muted flex items-center justify-center overflow-hidden border-2 border-border shrink-0">
+                                    <div className="h-20 w-20 rounded-lg bg-muted flex items-center justify-center overflow-hidden border-2 border-border shrink-0">
                                         {editForm.logoUrl ? (
                                             <img 
                                                 src={editForm.logoUrl} 
@@ -1479,7 +1561,7 @@ export const CompanyDetail: React.FC = () => {
                                             <button
                                                 type="button"
                                                 onClick={() => setEditForm(f => ({ ...f, logoUrl: '' }))}
-                                                className="text-xs text-red-500 hover:underline"
+                                                className="text-xs text-muted-foreground hover:text-foreground hover:underline"
                                             >
                                                 Supprimer le logo
                                             </button>
@@ -1548,7 +1630,7 @@ export const CompanyDetail: React.FC = () => {
                                 <button 
                                     type="button"
                                     onClick={handleDeleteCompany}
-                                    className="px-3 py-2 text-sm text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg flex items-center gap-2"
+                                    className="px-3 py-2 text-sm text-muted-foreground hover:bg-muted hover:text-foreground rounded-lg flex items-center gap-2"
                                 >
                                     <Trash2 className="h-4 w-4" /> Supprimer
                                 </button>
@@ -1569,8 +1651,8 @@ export const CompanyDetail: React.FC = () => {
             {/* Contact Modal */}
             {showContactModal && (
                 <>
-                    <div className="fixed inset-0 z-50 bg-black/50" onClick={() => setShowContactModal(false)} />
-                    <div className="fixed inset-x-4 top-[20%] z-50 mx-auto max-w-md bg-background border rounded-xl shadow-xl p-5">
+                    <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm" onClick={() => setShowContactModal(false)} />
+                    <div className="fixed inset-x-4 top-[20%] z-50 mx-auto max-w-md bg-background border rounded-lg shadow-sm p-5">
                         <div className="flex items-center justify-between mb-4">
                             <h2 className="font-medium">{editingContactId ? 'Modifier le contact' : 'Nouveau contact'}</h2>
                             <button onClick={() => setShowContactModal(false)} className="p-1 hover:bg-muted rounded">
@@ -1588,25 +1670,14 @@ export const CompanyDetail: React.FC = () => {
                                     className="w-full px-3 py-2 rounded-lg border bg-background text-sm"
                                 />
                             </div>
-                            <div>
-                                <label className="block text-sm font-medium mb-1.5">Email</label>
-                                <input
-                                    type="email"
-                                    required
-                                    value={contactForm.email}
-                                    onChange={e => setContactForm(f => ({ ...f, email: e.target.value }))}
-                                    className="w-full px-3 py-2 rounded-lg border bg-background text-sm"
-                                />
-                            </div>
                             <div className="grid grid-cols-2 gap-4">
                                 <div>
-                                    <label className="block text-sm font-medium mb-1.5">Rôle</label>
+                                    <label className="block text-sm font-medium mb-1.5">Email <span className="text-muted-foreground font-normal">(optionnel)</span></label>
                                     <input
-                                        type="text"
-                                        required
-                                        value={contactForm.role}
-                                        onChange={e => setContactForm(f => ({ ...f, role: e.target.value }))}
-                                        placeholder="Ex: Directeur Commercial"
+                                        type="email"
+                                        value={contactForm.email}
+                                        onChange={e => setContactForm(f => ({ ...f, email: e.target.value }))}
+                                        placeholder="email@exemple.com"
                                         className="w-full px-3 py-2 rounded-lg border bg-background text-sm"
                                     />
                                 </div>
@@ -1619,6 +1690,27 @@ export const CompanyDetail: React.FC = () => {
                                         className="w-full px-3 py-2 rounded-lg border bg-background text-sm"
                                     />
                                 </div>
+                            </div>
+                            <div>
+                                <label className="block text-sm font-medium mb-1.5">Rôle</label>
+                                <input
+                                    type="text"
+                                    required
+                                    value={contactForm.role}
+                                    onChange={e => setContactForm(f => ({ ...f, role: e.target.value }))}
+                                    placeholder="Ex: Directeur Commercial"
+                                    className="w-full px-3 py-2 rounded-lg border bg-background text-sm"
+                                />
+                            </div>
+                            <div>
+                                <label className="block text-sm font-medium mb-1.5">Notes <span className="text-muted-foreground font-normal">(optionnel)</span></label>
+                                <textarea
+                                    value={contactForm.notes}
+                                    onChange={e => setContactForm(f => ({ ...f, notes: e.target.value }))}
+                                    rows={2}
+                                    placeholder="Notes rapides, contexte du contact…"
+                                    className="w-full px-3 py-2 rounded-lg border bg-background text-sm resize-none"
+                                />
                             </div>
                             <label className="flex items-center gap-2 cursor-pointer">
                                 <input
@@ -1645,8 +1737,8 @@ export const CompanyDetail: React.FC = () => {
             {/* Project Creation Modal */}
             {showProjectModal && (
                 <>
-                    <div className="fixed inset-0 z-50 bg-black/50" onClick={() => setShowProjectModal(false)} />
-                    <div className="fixed inset-x-4 top-[10%] z-50 mx-auto max-w-lg bg-background border rounded-xl shadow-xl overflow-hidden">
+                    <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm" onClick={() => setShowProjectModal(false)} />
+                    <div className="fixed inset-x-4 top-[10%] z-50 mx-auto max-w-lg bg-background border rounded-lg shadow-sm overflow-hidden">
                         <div className="flex items-center justify-between px-5 py-4 border-b">
                             <div className="flex items-center gap-2">
                                 <FolderKanban className="h-5 w-5 text-primary" />
@@ -1750,8 +1842,8 @@ export const CompanyDetail: React.FC = () => {
             {/* Team Modal */}
             {showTeamModal && (
                 <>
-                    <div className="fixed inset-0 z-50 bg-black/50" onClick={() => setShowTeamModal(false)} />
-                    <div className="fixed inset-x-4 top-[20%] z-50 mx-auto max-w-md bg-background border rounded-xl shadow-xl p-5">
+                    <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm" onClick={() => setShowTeamModal(false)} />
+                    <div className="fixed inset-x-4 top-[20%] z-50 mx-auto max-w-md bg-background border rounded-lg shadow-sm p-5">
                         <div className="flex items-center justify-between mb-4">
                             <div className="flex items-center gap-2">
                                 <Users className="h-5 w-5 text-primary" />
@@ -1785,7 +1877,7 @@ export const CompanyDetail: React.FC = () => {
                                                 </div>
                                                 <button 
                                                     onClick={() => handleRemoveTeamMember(m.id)}
-                                                    className="p-1.5 hover:bg-red-100 hover:text-red-500 rounded dark:hover:bg-red-900/30"
+                                                    className="p-1.5 hover:bg-muted hover:text-foreground rounded"
                                                 >
                                                     <Trash2 className="h-3.5 w-3.5" />
                                                 </button>
@@ -1845,8 +1937,8 @@ export const CompanyDetail: React.FC = () => {
             {/* Document Modal */}
             {showDocumentModal && (
                 <>
-                    <div className="fixed inset-0 z-50 bg-black/50" onClick={() => setShowDocumentModal(false)} />
-                    <div className="fixed inset-x-4 top-[20%] z-50 mx-auto max-w-md bg-background border rounded-xl shadow-xl p-5">
+                    <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm" onClick={() => setShowDocumentModal(false)} />
+                    <div className="fixed inset-x-4 top-[20%] z-50 mx-auto max-w-md bg-background border rounded-lg shadow-sm p-5">
                         <div className="flex items-center justify-between mb-4">
                             <div className="flex items-center gap-2">
                                 <FileText className="h-5 w-5 text-primary" />
@@ -1914,11 +2006,69 @@ export const CompanyDetail: React.FC = () => {
                 </>
             )}
 
+            {/* Drive Browser Modal */}
+            {showDriveBrowser && (
+                <>
+                    <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm" onClick={() => setShowDriveBrowser(false)} />
+                    <div className="fixed inset-x-4 top-[10%] z-50 mx-auto max-w-lg bg-background border rounded-lg shadow-sm p-5 max-h-[70vh] flex flex-col">
+                        <div className="flex items-center justify-between mb-3">
+                            <h2 className="font-medium flex items-center gap-2"><FileText className="h-4 w-4 text-primary" /> Parcourir Google Drive</h2>
+                            <button onClick={() => setShowDriveBrowser(false)} className="p-1 hover:bg-muted rounded"><X className="h-4 w-4" /></button>
+                        </div>
+                        <div className="flex gap-2 mb-3">
+                            <input
+                                placeholder="Rechercher un fichier..."
+                                value={driveSearch}
+                                onChange={e => setDriveSearch(e.target.value)}
+                                onKeyDown={e => e.key === 'Enter' && loadDriveFiles(driveSearch || undefined)}
+                                className="flex-1 px-3 py-2 rounded-lg border bg-background text-sm"
+                            />
+                            <button onClick={() => loadDriveFiles(driveSearch || undefined)} className="px-3 py-2 rounded-lg border hover:bg-muted text-sm">
+                                Rechercher
+                            </button>
+                        </div>
+                        <div className="flex-1 overflow-y-auto space-y-1.5 min-h-[150px]">
+                            {loadingDrive ? (
+                                <div className="flex items-center justify-center py-10">
+                                    <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+                                </div>
+                            ) : driveFiles.length === 0 ? (
+                                <p className="text-center py-10 text-sm text-muted-foreground">
+                                    {googleDriveService.isAuthenticated() ? 'Aucun fichier trouve.' : 'Connectez-vous a Google (via Gmail) pour acceder au Drive.'}
+                                </p>
+                            ) : (
+                                driveFiles.map(file => (
+                                    <button key={file.id} onClick={() => handleLinkDriveFile(file)}
+                                        className="w-full flex items-center gap-3 p-2.5 rounded-lg border hover:border-primary/30 hover:bg-primary/5 transition-all text-left text-sm">
+                                        <FileText className="h-4 w-4 text-muted-foreground shrink-0" />
+                                        <div className="flex-1 min-w-0">
+                                            <p className="font-medium truncate">{file.name}</p>
+                                            <p className="text-xs text-muted-foreground">{file.modifiedTime ? new Date(file.modifiedTime).toLocaleDateString('fr-FR') : ''}</p>
+                                        </div>
+                                        <Plus className="h-4 w-4 text-muted-foreground" />
+                                    </button>
+                                ))
+                            )}
+                        </div>
+                        <div className="flex justify-between pt-3 border-t mt-3">
+                            <button onClick={() => { setShowDriveBrowser(false); setShowDocumentModal(true); }}
+                                className="text-xs text-muted-foreground hover:text-foreground flex items-center gap-1">
+                                <Link className="h-3 w-3" /> Lien manuel
+                            </button>
+                            <a href={googleDriveService.getSharedFolderUrl()} target="_blank" rel="noreferrer"
+                                className="text-xs text-muted-foreground hover:text-foreground flex items-center gap-1">
+                                <ExternalLink className="h-3 w-3" /> Ouvrir Drive
+                            </a>
+                        </div>
+                    </div>
+                </>
+            )}
+
             {/* Document Viewer Modal */}
             {showDocumentViewer && company.documents && (
                 <>
-                    <div className="fixed inset-0 z-50 bg-black/60" onClick={() => { setShowDocumentViewer(false); setSelectedDocument(null); }} />
-                    <div className="fixed inset-4 md:inset-8 z-50 bg-background border rounded-xl shadow-2xl flex flex-col overflow-hidden">
+                    <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm" onClick={() => { setShowDocumentViewer(false); setSelectedDocument(null); }} />
+                    <div className="fixed inset-4 md:inset-8 z-50 bg-background border rounded-lg shadow-sm flex flex-col overflow-hidden">
                         {/* Header */}
                         <div className="flex items-center justify-between px-5 py-4 border-b bg-muted/30">
                             <div className="flex items-center gap-3">
@@ -1952,13 +2102,7 @@ export const CompanyDetail: React.FC = () => {
                                             )}
                                         >
                                             <div className={cn(
-                                                "h-10 w-10 rounded-lg flex items-center justify-center shrink-0",
-                                                doc.type === 'pdf' ? "bg-red-100 text-red-600 dark:bg-red-900/30" :
-                                                doc.type === 'sheet' ? "bg-green-100 text-green-600 dark:bg-green-900/30" :
-                                                doc.type === 'doc' ? "bg-blue-100 text-blue-600 dark:bg-blue-900/30" :
-                                                doc.type === 'slide' ? "bg-orange-100 text-orange-600 dark:bg-orange-900/30" :
-                                                doc.type === 'image' ? "bg-purple-100 text-purple-600 dark:bg-purple-900/30" :
-                                                "bg-muted"
+                                                "h-10 w-10 rounded-lg flex items-center justify-center shrink-0 bg-muted text-muted-foreground"
                                             )}>
                                                 <FileText className="h-5 w-5" />
                                             </div>
@@ -1999,7 +2143,7 @@ export const CompanyDetail: React.FC = () => {
                                             <div className="flex items-center gap-2">
                                                 <button 
                                                     onClick={() => handleRemoveDocument(selectedDocument.id)}
-                                                    className="p-2 hover:bg-red-50 hover:text-red-500 rounded-lg transition-colors dark:hover:bg-red-900/20"
+                                                    className="p-2 hover:bg-muted hover:text-foreground rounded-lg transition-colors"
                                                     title="Supprimer"
                                                 >
                                                     <Trash2 className="h-4 w-4" />
@@ -2023,7 +2167,7 @@ export const CompanyDetail: React.FC = () => {
                                                     <img 
                                                         src={selectedDocument.url} 
                                                         alt={selectedDocument.name}
-                                                        className="max-w-full max-h-full object-contain rounded-lg shadow-lg"
+                                                        className="max-w-full max-h-full object-contain rounded-lg shadow-sm"
                                                     />
                                                 </div>
                                             ) : selectedDocument.type === 'pdf' || selectedDocument.url.match(/\.pdf$/i) ? (
@@ -2084,7 +2228,7 @@ export const CompanyDetail: React.FC = () => {
 
 // Helper components
 const Card: React.FC<{ children: React.ReactNode; className?: string }> = ({ children, className }) => (
-    <div className={cn("bg-card border border-border rounded-xl p-5", className)}>
+    <div className={cn("bg-card border border-border rounded-lg p-5", className)}>
         {children}
     </div>
 );
@@ -2144,3 +2288,191 @@ function getNextActions(company: Company, stageIndex: number, daysSinceContact: 
     
     return actions.slice(0, 2);
 }
+
+// =====================================================
+// UNIFIED TIMELINE COMPONENT
+// =====================================================
+
+interface TimelineEntry {
+    id: string;
+    type: 'email_in' | 'email_out' | 'meeting' | 'task' | 'note' | 'call' | 'document' | 'pipeline';
+    title: string;
+    description?: string;
+    date: string;
+    user?: string;
+    metadata?: Record<string, any>;
+}
+
+const CompanyTimeline: React.FC<{
+    company: Company;
+    emails: CompanyEmail[];
+    tasks: Task[];
+    projects: Project[];
+    meetings: any[];
+    loadingEmails: boolean;
+    isGmailConnected: boolean;
+}> = ({ company, emails, tasks, projects, meetings, loadingEmails, isGmailConnected }) => {
+    const entries: TimelineEntry[] = [];
+
+    // Merge activities
+    for (const act of company.activities) {
+        entries.push({
+            id: `act-${act.id}`,
+            type: act.type === 'email' ? 'email_out' : act.type === 'meeting' ? 'meeting' : act.type === 'call' ? 'call' : 'note',
+            title: act.title,
+            description: act.description,
+            date: act.date,
+            user: act.user,
+        });
+    }
+
+    // Merge emails
+    for (const email of emails) {
+        entries.push({
+            id: `email-${email.id}`,
+            type: email.isInbound ? 'email_in' : 'email_out',
+            title: email.subject,
+            description: email.snippet,
+            date: email.date,
+            user: email.isInbound ? email.fromName : 'Vous',
+            metadata: { from: email.fromName, to: email.to },
+        });
+    }
+
+    // Merge completed tasks
+    for (const task of tasks.filter(t => t.status === 'completed')) {
+        entries.push({
+            id: `task-${task.id}`,
+            type: 'task',
+            title: task.title,
+            description: task.description,
+            date: task.updatedAt || task.createdAt,
+            user: task.assignedTo?.[0],
+        });
+    }
+
+    // Merge documents
+    for (const doc of company.documents) {
+        entries.push({
+            id: `doc-${doc.id}`,
+            type: 'document',
+            title: `Document ajouté : ${doc.name}`,
+            date: doc.createdAt,
+            user: doc.addedBy,
+            metadata: { url: doc.url, docType: doc.type },
+        });
+    }
+
+    // Merge meetings (past ones from calendar)
+    for (const meeting of meetings) {
+        const endTime = meeting.end?.dateTime || meeting.end?.date;
+        if (endTime && new Date(endTime) < new Date()) {
+            entries.push({
+                id: `meet-${meeting.id}`,
+                type: 'meeting',
+                title: meeting.summary || 'Réunion',
+                date: meeting.start.dateTime || meeting.start.date,
+                metadata: { attendees: meeting.attendees?.length, location: meeting.location, hangoutLink: meeting.hangoutLink },
+            });
+        }
+    }
+
+    // Sort by date descending
+    entries.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+
+    // Group by date
+    const grouped: Record<string, TimelineEntry[]> = {};
+    for (const entry of entries) {
+        const d = new Date(entry.date);
+        const key = d.toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+        if (!grouped[key]) grouped[key] = [];
+        grouped[key].push(entry);
+    }
+
+    const typeConfig: Record<string, { icon: React.ElementType; label: string }> = {
+        email_in: { icon: Inbox, label: 'Email reçu' },
+        email_out: { icon: Send, label: 'Email envoyé' },
+        meeting: { icon: Calendar, label: 'Réunion' },
+        task: { icon: CheckCircle2, label: 'Tâche terminée' },
+        note: { icon: MessageSquare, label: 'Note' },
+        call: { icon: Phone, label: 'Appel' },
+        document: { icon: FileText, label: 'Document' },
+        pipeline: { icon: Target, label: 'Pipeline' },
+    };
+
+    if (entries.length === 0 && !loadingEmails) {
+        return (
+            <div className="text-center py-16">
+                <Clock className="h-10 w-10 text-muted-foreground/30 mx-auto mb-3" />
+                <p className="text-sm text-muted-foreground">Aucune activité enregistrée</p>
+                <p className="text-xs text-muted-foreground/60 mt-1">Les emails, réunions, tâches et notes apparaîtront ici</p>
+            </div>
+        );
+    }
+
+    return (
+        <div className="max-w-2xl mx-auto">
+            {loadingEmails && (
+                <div className="flex items-center gap-2 text-xs text-muted-foreground mb-4">
+                    <Loader2 className="h-3 w-3 animate-spin" />
+                    Chargement des emails…
+                </div>
+            )}
+
+            <div className="space-y-8">
+                {Object.entries(grouped).map(([dateLabel, dayEntries]) => (
+                    <div key={dateLabel}>
+                        <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3 sticky top-0 bg-background py-1">{dateLabel}</p>
+                        <div className="space-y-0">
+                            {dayEntries.map((entry, idx) => {
+                                const config = typeConfig[entry.type] || typeConfig.note;
+                                const Icon = config.icon;
+                                const isLast = idx === dayEntries.length - 1;
+                                return (
+                                    <div key={entry.id} className="flex gap-3 group">
+                                        {/* Vertical line + dot */}
+                                        <div className="flex flex-col items-center w-8 shrink-0">
+                                            <div className={cn(
+                                                "h-7 w-7 rounded-md flex items-center justify-center shrink-0 mt-0.5",
+                                                entry.type === 'email_in' ? "bg-foreground/5" :
+                                                entry.type === 'email_out' ? "bg-foreground/8" :
+                                                entry.type === 'meeting' ? "bg-foreground/10" :
+                                                entry.type === 'task' ? "bg-foreground/10" :
+                                                "bg-muted"
+                                            )}>
+                                                <Icon className="h-3.5 w-3.5 text-foreground/60" />
+                                            </div>
+                                            {!isLast && <div className="w-px flex-1 bg-border my-1" />}
+                                        </div>
+
+                                        {/* Content */}
+                                        <div className={cn("flex-1 pb-4 min-w-0", !isLast && "border-b-0")}>
+                                            <div className="flex items-center gap-2 mb-0.5">
+                                                <span className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">{config.label}</span>
+                                                <span className="text-[10px] text-muted-foreground/50">
+                                                    {new Date(entry.date).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}
+                                                </span>
+                                            </div>
+                                            <p className="text-sm font-medium leading-snug">{entry.title}</p>
+                                            {entry.description && (
+                                                <p className="text-xs text-muted-foreground mt-1 line-clamp-2 leading-relaxed">{entry.description}</p>
+                                            )}
+                                            {entry.user && (
+                                                <p className="text-[10px] text-muted-foreground/60 mt-1">{entry.user}</p>
+                                            )}
+                                            {entry.metadata?.url && (
+                                                <a href={entry.metadata.url} target="_blank" rel="noreferrer" className="text-[10px] text-foreground/60 hover:underline mt-1 flex items-center gap-1">
+                                                    <ExternalLink className="h-2.5 w-2.5" /> Ouvrir
+                                                </a>
+                                            )}
+                                        </div>
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    </div>
+                ))}
+            </div>
+        </div>
+    );
+};

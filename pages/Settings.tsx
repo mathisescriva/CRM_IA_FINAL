@@ -21,6 +21,7 @@ export const Settings: React.FC = () => {
     const [isAway, setIsAway] = useState(false);
     const [returnDate, setReturnDate] = useState('');
     const [customLogo, setCustomLogo] = useState('');
+    const [avatarUrl, setAvatarUrl] = useState('');
     
     const [isGoogleAuth, setIsGoogleAuth] = useState(false);
     const [currentOrigin, setCurrentOrigin] = useState('');
@@ -29,6 +30,7 @@ export const Settings: React.FC = () => {
     const [loading, setLoading] = useState(false);
     const [message, setMessage] = useState<{ text: string; type: 'success' | 'error' | '' }>({ text: '', type: '' });
     const logoInputRef = useRef<HTMLInputElement>(null);
+    const avatarInputRef = useRef<HTMLInputElement>(null);
 
     useEffect(() => {
         setCurrentOrigin(window.location.origin);
@@ -41,6 +43,7 @@ export const Settings: React.FC = () => {
             setIsAway(currentUser.isAway || false);
             setReturnDate(currentUser.returnDate || '');
             setCustomLogo(currentUser.customAppLogo || '');
+            setAvatarUrl(currentUser.avatarUrl || '');
         }
 
         const checkAuth = async () => {
@@ -96,6 +99,17 @@ export const Settings: React.FC = () => {
         }
     };
 
+    const handleAvatarUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (file) {
+            const reader = new FileReader();
+            reader.onloadend = () => {
+                setAvatarUrl(reader.result as string);
+            };
+            reader.readAsDataURL(file);
+        }
+    };
+
     const handleSave = async (e: React.FormEvent) => {
         e.preventDefault();
         if (!user) return;
@@ -104,7 +118,8 @@ export const Settings: React.FC = () => {
             await authService.updateProfile({
                 name, email, role, isAway,
                 returnDate: isAway ? returnDate : undefined,
-                customAppLogo: customLogo
+                customAppLogo: customLogo,
+                avatarUrl: avatarUrl || undefined,
             });
             setMessage({ text: 'Profil mis à jour avec succès.', type: 'success' });
             setTimeout(() => setMessage({ text: '', type: '' }), 3000);
@@ -117,57 +132,57 @@ export const Settings: React.FC = () => {
 
     if (!user) return null;
 
-    const cardClasses = "bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden mb-6";
-    const labelClasses = "text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-widest mb-2 block";
-    const inputClasses = "flex h-10 w-full rounded-md border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 px-3 py-2 text-sm text-slate-900 dark:text-slate-100 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-slate-400 dark:focus-visible:ring-slate-700 transition-all placeholder:text-slate-400";
+    const cardClasses = "bg-card rounded-lg border border-border shadow-sm overflow-hidden mb-6";
+    const labelClasses = "text-xs font-semibold text-muted-foreground uppercase tracking-widest mb-2 block";
+    const inputClasses = "flex h-10 w-full rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring transition-all placeholder:text-muted-foreground";
 
     return (
         <div className="max-w-4xl mx-auto space-y-10 pb-32 px-4 animate-in fade-in duration-500">
-            <header className="py-6 border-b border-slate-100 dark:border-slate-800">
-                <h1 className="text-3xl font-bold tracking-tight text-slate-900 dark:text-slate-50">Preferences</h1>
-                <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">Manage your account settings and connected services.</p>
+            <header className="py-6 border-b border-border">
+                <h1 className="text-3xl font-bold tracking-tight text-foreground">Preferences</h1>
+                <p className="text-sm text-muted-foreground mt-1">Manage your account settings and connected services.</p>
             </header>
 
             <form onSubmit={handleSave} className="space-y-8">
                 
                 {/* 1. CLOUD SERVICES */}
                 <section className={cardClasses}>
-                    <div className="p-6 border-b border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-950/50">
+                    <div className="p-6 border-b border-border bg-muted/50">
                         <div className="flex items-center gap-2">
-                            <Sparkles className="h-5 w-5 text-indigo-500" />
-                            <h2 className="text-base font-bold text-slate-900 dark:text-slate-100">Cloud Integrations</h2>
+                            <Sparkles className="h-5 w-5 text-foreground" />
+                            <h2 className="text-base font-bold text-foreground">Cloud Integrations</h2>
                         </div>
                     </div>
                     
                     <div className="p-6 space-y-6">
                         {/* Gemini IA */}
-                        <div className="flex flex-col md:flex-row gap-6 items-start md:items-center p-5 bg-slate-50 dark:bg-slate-950 border border-slate-100 dark:border-slate-800 rounded-lg">
-                            <div className="p-3 bg-indigo-100 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 rounded-lg">
+                        <div className="flex flex-col md:flex-row gap-6 items-start md:items-center p-5 bg-muted border border-border rounded-lg">
+                            <div className="p-3 bg-foreground/5 text-foreground rounded-lg">
                                 <Key className="h-6 w-6" />
                             </div>
                             <div className="flex-1 space-y-1">
                                 <div className="flex items-center gap-2">
-                                    <h3 className="font-bold text-slate-900 dark:text-slate-100">Intelligence Gemini 3.0</h3>
-                                    <span className="px-2 py-0.5 bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400 text-[10px] font-bold uppercase rounded-full">Active</span>
+                                    <h3 className="font-bold text-foreground">Intelligence Gemini 3.0</h3>
+                                    <span className="px-2 py-0.5 bg-foreground/5 text-foreground text-[10px] font-bold uppercase rounded-full">Active</span>
                                 </div>
-                                <p className="text-xs text-slate-500 dark:text-slate-500 leading-relaxed">
+                                <p className="text-xs text-muted-foreground leading-relaxed">
                                     Gemini AI is operational and ready to assist you with data analysis and voice commands.
                                 </p>
                             </div>
-                            <div className="flex items-center gap-2 text-emerald-600 dark:text-emerald-400 font-bold text-xs bg-white dark:bg-slate-900 px-3 py-1.5 rounded-lg border border-emerald-100 dark:border-emerald-900/30">
+                            <div className="flex items-center gap-2 text-foreground font-bold text-xs bg-card px-3 py-1.5 rounded-lg border border-border">
                                 <CheckCircle2 className="h-4 w-4" /> Operational
                             </div>
                         </div>
 
                         {/* Gmail Integration */}
                         <div className="space-y-4">
-                            <div className="flex flex-col md:flex-row gap-6 items-start md:items-center p-5 bg-slate-50 dark:bg-slate-950 border border-slate-100 dark:border-slate-800 rounded-lg">
-                                <div className="p-3 bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 rounded-lg">
+                            <div className="flex flex-col md:flex-row gap-6 items-start md:items-center p-5 bg-muted border border-border rounded-lg">
+                                <div className="p-3 bg-foreground/5 text-foreground rounded-lg">
                                     <Mail className="h-6 w-6" />
                                 </div>
                                 <div className="flex-1 space-y-1">
-                                    <h3 className="font-bold text-slate-900 dark:text-slate-100">Google Workspace</h3>
-                                    <p className="text-xs text-slate-500 dark:text-slate-500 leading-relaxed">
+                                    <h3 className="font-bold text-foreground">Google Workspace</h3>
+                                    <p className="text-xs text-muted-foreground leading-relaxed">
                                         Link your Gmail account to sync communication history directly into your client profiles.
                                     </p>
                                 </div>
@@ -176,7 +191,7 @@ export const Settings: React.FC = () => {
                                     onClick={isGoogleAuth ? () => gmailService.logout() : handleGoogleConnect}
                                     className={cn(
                                         "px-4 py-2 rounded-lg text-xs font-bold transition-all flex items-center gap-2",
-                                        isGoogleAuth ? "bg-white dark:bg-slate-900 text-red-600 border border-red-100 dark:border-red-900/50" : "bg-blue-600 text-white hover:bg-blue-700 shadow-sm"
+                                        isGoogleAuth ? "bg-card text-foreground border border-border" : "bg-foreground text-background hover:bg-foreground/90 shadow-sm"
                                     )}
                                 >
                                     {isGoogleAuth ? "Disconnect" : "Connect Google"}
@@ -184,23 +199,23 @@ export const Settings: React.FC = () => {
                             </div>
 
                             {!isGoogleAuth && (
-                                <div className="p-4 border border-amber-100 dark:border-amber-900/30 rounded-lg bg-amber-50/20 dark:bg-amber-900/5 space-y-3 animate-in slide-in-from-top-2">
-                                    <div className="flex items-center gap-2 text-amber-800 dark:text-amber-500 font-bold text-xs uppercase tracking-wider">
+                                <div className="p-4 border border-border rounded-lg bg-muted/50 space-y-3 animate-in slide-in-from-top-2">
+                                    <div className="flex items-center gap-2 text-foreground font-bold text-xs uppercase tracking-wider">
                                         <AlertTriangle className="h-4 w-4" /> Action Required
                                     </div>
-                                    <p className="text-xs text-slate-600 dark:text-slate-400 leading-relaxed">
+                                    <p className="text-xs text-muted-foreground leading-relaxed">
                                         Ensure your current origin URL is added to the <b>"Authorized JavaScript origins"</b> in your Google Cloud Console.
                                     </p>
-                                    <div className="flex items-center gap-2 bg-white dark:bg-slate-950 p-2 rounded-lg border border-amber-100 dark:border-amber-900/30 shadow-sm">
-                                        <code className="flex-1 text-[10px] font-mono truncate px-2 text-slate-500 dark:text-slate-400">
+                                    <div className="flex items-center gap-2 bg-background p-2 rounded-lg border border-border shadow-sm">
+                                        <code className="flex-1 text-[10px] font-mono truncate px-2 text-muted-foreground">
                                             {currentOrigin}
                                         </code>
                                         <button 
                                             type="button" 
                                             onClick={() => copyToClipboard(currentOrigin)}
-                                            className="p-1.5 hover:bg-slate-50 dark:hover:bg-slate-800 rounded-md transition-colors"
+                                            className="p-1.5 hover:bg-muted rounded-md transition-colors"
                                         >
-                                            <Copy className="h-4 w-4 text-amber-600" />
+                                            <Copy className="h-4 w-4 text-muted-foreground" />
                                         </button>
                                     </div>
                                 </div>
@@ -211,13 +226,58 @@ export const Settings: React.FC = () => {
 
                 {/* 2. USER PROFILE */}
                 <section className={cardClasses}>
-                    <div className="p-6 border-b border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-950/50">
+                    <div className="p-6 border-b border-border bg-muted/50">
                         <div className="flex items-center gap-2">
-                            <UserIcon className="h-5 w-5 text-slate-700 dark:text-slate-300" />
-                            <h2 className="text-base font-bold text-slate-900 dark:text-slate-100">Profile Identity</h2>
+                            <UserIcon className="h-5 w-5 text-foreground" />
+                            <h2 className="text-base font-bold text-foreground">Profile Identity</h2>
                         </div>
                     </div>
                     <div className="p-6 space-y-6">
+                        {/* Profile Picture */}
+                        <div className="flex items-center gap-6">
+                            <div className="relative group">
+                                <div className="h-20 w-20 rounded-full overflow-hidden bg-muted border-2 border-border shadow-sm">
+                                    {avatarUrl ? (
+                                        <img src={avatarUrl} alt="Avatar" className="h-full w-full object-cover" />
+                                    ) : (
+                                        <div className="h-full w-full flex items-center justify-center text-2xl font-bold text-muted-foreground">
+                                            {name ? name.charAt(0).toUpperCase() : '?'}
+                                        </div>
+                                    )}
+                                </div>
+                                <button
+                                    type="button"
+                                    onClick={() => avatarInputRef.current?.click()}
+                                    className="absolute inset-0 rounded-full bg-black/0 group-hover:bg-black/40 transition-all flex items-center justify-center opacity-0 group-hover:opacity-100 cursor-pointer"
+                                >
+                                    <Upload className="h-5 w-5 text-white drop-shadow" />
+                                </button>
+                            </div>
+                            <div className="flex-1 space-y-2">
+                                <p className="text-sm font-semibold text-foreground">Photo de profil</p>
+                                <div className="flex items-center gap-2">
+                                    <button
+                                        type="button"
+                                        onClick={() => avatarInputRef.current?.click()}
+                                        className="px-3 py-1.5 text-xs font-semibold bg-muted hover:bg-muted/80 text-foreground rounded-lg transition-colors flex items-center gap-1.5"
+                                    >
+                                        <Upload className="h-3.5 w-3.5" /> Changer
+                                    </button>
+                                    {avatarUrl && !avatarUrl.startsWith('/') && (
+                                        <button
+                                            type="button"
+                                            onClick={() => setAvatarUrl('')}
+                                            className="px-3 py-1.5 text-xs font-semibold text-muted-foreground hover:text-foreground hover:bg-muted rounded-lg transition-colors flex items-center gap-1.5"
+                                        >
+                                            <Trash2 className="h-3.5 w-3.5" /> Supprimer
+                                        </button>
+                                    )}
+                                </div>
+                                <p className="text-[11px] text-muted-foreground">JPG, PNG ou WebP. Max 2 Mo.</p>
+                                <input type="file" ref={avatarInputRef} onChange={handleAvatarUpload} accept="image/jpeg,image/png,image/webp" className="hidden" />
+                            </div>
+                        </div>
+
                         <div className="grid gap-6 md:grid-cols-2">
                             <div className="space-y-1">
                                 <label className={labelClasses}>Display Name</label>
@@ -230,35 +290,35 @@ export const Settings: React.FC = () => {
                         </div>
                         <div className="space-y-1 opacity-60">
                             <label className={labelClasses}>Login Email (Read-only)</label>
-                            <div className={cn(inputClasses, "bg-slate-50 dark:bg-slate-950 border-dashed")}>{email}</div>
+                            <div className={cn(inputClasses, "bg-muted border-dashed")}>{email}</div>
                         </div>
                     </div>
                 </section>
 
                 {/* 3. AVAILABILITY */}
                 <section className={cardClasses}>
-                    <div className="p-6 border-b border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-950/50">
+                    <div className="p-6 border-b border-border bg-muted/50">
                         <div className="flex items-center gap-2">
-                            <Plane className="h-5 w-5 text-slate-700 dark:text-slate-300" />
-                            <h2 className="text-base font-bold text-slate-900 dark:text-slate-100">Work Status</h2>
+                            <Plane className="h-5 w-5 text-foreground" />
+                            <h2 className="text-base font-bold text-foreground">Work Status</h2>
                         </div>
                     </div>
                     <div className="p-6 space-y-6">
-                        <div className="flex items-center justify-between p-4 bg-slate-50 dark:bg-slate-950 rounded-lg border border-slate-100 dark:border-slate-800">
+                        <div className="flex items-center justify-between p-4 bg-muted rounded-lg border border-border">
                             <div className="space-y-0.5">
-                                <p className="text-sm font-bold text-slate-900 dark:text-slate-100">Away Mode</p>
-                                <p className="text-xs text-slate-500 dark:text-slate-500">Enable this during leave to trigger a catch-up briefing upon return.</p>
+                                <p className="text-sm font-bold text-foreground">Away Mode</p>
+                                <p className="text-xs text-muted-foreground">Enable this during leave to trigger a catch-up briefing upon return.</p>
                             </div>
                             <button 
                                 type="button" 
                                 onClick={() => setIsAway(!isAway)}
                                 className={cn(
                                     "relative inline-flex h-6 w-11 shrink-0 cursor-pointer items-center rounded-full transition-colors duration-200 focus:outline-none",
-                                    isAway ? "bg-orange-600" : "bg-slate-200 dark:bg-slate-800"
+                                    isAway ? "bg-foreground" : "bg-muted"
                                 )}
                             >
                                 <span className={cn(
-                                    "pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow transition duration-200",
+                                    "pointer-events-none inline-block h-4 w-4 transform rounded-full bg-background shadow transition duration-200",
                                     isAway ? "translate-x-6" : "translate-x-1"
                                 )} />
                             </button>
@@ -268,7 +328,7 @@ export const Settings: React.FC = () => {
                             <div className="space-y-1 animate-in slide-in-from-top-2">
                                 <label className={labelClasses}>Expected Return Date</label>
                                 <div className="relative">
-                                    <Clock className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
+                                    <Clock className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
                                     <input 
                                         type="date" 
                                         value={returnDate} 
@@ -283,26 +343,26 @@ export const Settings: React.FC = () => {
 
                 {/* 4. BRANDING */}
                 <section className={cardClasses}>
-                    <div className="p-6 border-b border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-950/50">
+                    <div className="p-6 border-b border-border bg-muted/50">
                         <div className="flex items-center gap-2">
-                            <Palette className="h-5 w-5 text-slate-700 dark:text-slate-300" />
-                            <h2 className="text-base font-bold text-slate-900 dark:text-slate-100">Branding</h2>
+                            <Palette className="h-5 w-5 text-foreground" />
+                            <h2 className="text-base font-bold text-foreground">Branding</h2>
                         </div>
                     </div>
                     <div className="p-6">
                         <div className="flex flex-col md:flex-row gap-8 items-center">
-                            <div className="h-32 w-56 rounded-lg bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 flex items-center justify-center overflow-hidden shadow-sm">
+                            <div className="h-32 w-56 rounded-lg bg-muted border border-border flex items-center justify-center overflow-hidden shadow-sm">
                                 {customLogo ? (
                                     <img src={customLogo} alt="App Logo" className="max-h-full max-w-full object-contain p-4" />
                                 ) : (
-                                    <ImageIcon className="h-10 w-10 text-slate-300 dark:text-slate-700" />
+                                    <ImageIcon className="h-10 w-10 text-muted-foreground" />
                                 )}
                             </div>
                             <div className="flex flex-col gap-3 flex-1 w-full">
                                 <button 
                                     type="button" 
                                     onClick={() => logoInputRef.current?.click()}
-                                    className="w-full py-3 px-4 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-sm font-bold text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 transition-all flex items-center justify-center gap-2"
+                                    className="w-full py-3 px-4 bg-card border border-border rounded-lg text-sm font-bold text-foreground hover:bg-muted transition-all flex items-center justify-center gap-2"
                                 >
                                     <Upload className="h-4 w-4" /> Change Workspace Logo
                                 </button>
@@ -310,7 +370,7 @@ export const Settings: React.FC = () => {
                                     <button 
                                         type="button" 
                                         onClick={() => setCustomLogo('')}
-                                        className="text-xs text-red-500 hover:text-red-600 font-bold flex items-center justify-center gap-1 transition-colors"
+                                        className="text-xs text-muted-foreground hover:text-foreground font-bold flex items-center justify-center gap-1 transition-colors"
                                     >
                                         <Trash2 className="h-3 w-3" /> Reset to default
                                     </button>
@@ -325,7 +385,7 @@ export const Settings: React.FC = () => {
                     <button 
                         type="submit" 
                         disabled={loading} 
-                        className="px-8 py-3 bg-slate-900 dark:bg-white text-white dark:text-slate-900 rounded-lg font-bold shadow-lg hover:opacity-90 transition-all flex items-center gap-3 active:scale-95 disabled:opacity-50"
+                        className="px-8 py-3 bg-foreground text-background rounded-lg font-bold shadow-sm hover:bg-foreground/90 transition-all flex items-center gap-3 active:scale-95 disabled:opacity-50"
                     >
                         {loading ? <Loader2 className="h-5 w-5 animate-spin" /> : <Save className="h-5 w-5" />}
                         Apply Changes
@@ -335,8 +395,8 @@ export const Settings: React.FC = () => {
 
             {/* MESSAGE FEEDBACK */}
             {message.text && (
-                <div className={cn("fixed bottom-8 left-1/2 -translate-x-1/2 px-6 py-4 rounded-xl text-sm font-bold flex items-center gap-3 border shadow-2xl animate-in slide-in-from-bottom-6 z-[110] backdrop-blur-xl", 
-                    message.type === 'success' ? "bg-white/80 dark:bg-emerald-950/80 text-emerald-700 dark:text-emerald-400 border-emerald-100 dark:border-emerald-900" : "bg-white/80 dark:bg-red-950/80 text-red-700 dark:text-red-400 border-red-100 dark:border-red-900")}>
+                <div className={cn("fixed bottom-8 left-1/2 -translate-x-1/2 px-6 py-4 rounded-lg text-sm font-bold flex items-center gap-3 border shadow-sm animate-in slide-in-from-bottom-6 z-[110] backdrop-blur-xl", 
+                    message.type === 'success' ? "bg-card/80 text-foreground border-border" : "bg-card/80 text-foreground border-border")}>
                     {message.type === 'success' ? <CheckCircle2 className="h-5 w-5" /> : <XCircle className="h-5 w-5" />}
                     {message.text}
                 </div>

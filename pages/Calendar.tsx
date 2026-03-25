@@ -163,8 +163,8 @@ export const Calendar: React.FC = () => {
                         <div className="h-24 w-24 rounded-3xl bg-gradient-to-br from-primary/20 to-primary/5 flex items-center justify-center">
                             <CalendarIcon className="h-12 w-12 text-primary" />
                         </div>
-                        <div className="absolute -bottom-2 -right-2 h-10 w-10 rounded-xl bg-blue-500 flex items-center justify-center shadow-lg">
-                            <Video className="h-5 w-5 text-white" />
+                        <div className="absolute -bottom-2 -right-2 h-10 w-10 rounded-lg bg-foreground flex items-center justify-center shadow-sm">
+                            <Video className="h-5 w-5 text-background" />
                         </div>
                     </div>
                     
@@ -182,7 +182,7 @@ export const Calendar: React.FC = () => {
                         <div className="space-y-4">
                             <button
                                 onClick={handleLogin}
-                                className="px-8 py-4 bg-primary text-primary-foreground rounded-2xl font-semibold hover:bg-primary/90 transition-all shadow-lg hover:shadow-xl flex items-center gap-3 mx-auto"
+                                className="px-8 py-4 bg-primary text-primary-foreground rounded-lg font-semibold hover:bg-primary/90 transition-all shadow-sm flex items-center gap-3 mx-auto"
                             >
                                 <CalendarIcon className="h-5 w-5" />
                                 Connecter Google Calendar
@@ -190,23 +190,23 @@ export const Calendar: React.FC = () => {
                             
                             <div className="flex items-center gap-8 text-sm text-muted-foreground pt-4">
                                 <div className="flex items-center gap-2">
-                                    <Check className="h-4 w-4 text-green-500" />
+                                    <Check className="h-4 w-4 text-muted-foreground" />
                                     Notion Calendar
                                 </div>
                                 <div className="flex items-center gap-2">
-                                    <Check className="h-4 w-4 text-green-500" />
+                                    <Check className="h-4 w-4 text-muted-foreground" />
                                     Google Meet
                                 </div>
                                 <div className="flex items-center gap-2">
-                                    <Check className="h-4 w-4 text-green-500" />
+                                    <Check className="h-4 w-4 text-muted-foreground" />
                                     Temps réel
                                 </div>
                             </div>
                         </div>
                     ) : (
-                        <div className="max-w-md p-6 bg-orange-50 dark:bg-orange-950/20 border-2 border-orange-200 dark:border-orange-900/50 rounded-2xl text-left">
-                            <p className="text-sm text-orange-900 dark:text-orange-100">
-                                📚 Consultez le guide : <code className="px-2 py-1 bg-orange-900/20 rounded font-mono text-xs">GOOGLE_SETUP.md</code>
+                        <div className="max-w-md p-6 bg-muted border border-border rounded-lg text-left">
+                            <p className="text-sm text-foreground">
+                                📚 Consultez le guide : <code className="px-2 py-1 bg-foreground/10 rounded font-mono text-xs">GOOGLE_SETUP.md</code>
                             </p>
                         </div>
                     )}
@@ -367,7 +367,7 @@ const MonthView: React.FC<{
         day === today.getDate() && month === today.getMonth() && year === today.getFullYear();
 
     return (
-        <div className="rounded-xl border border-border overflow-hidden">
+        <div className="rounded-lg border border-border overflow-hidden">
             {/* Day headers */}
             <div className="grid grid-cols-7 bg-muted/50 border-b border-border">
                 {['Dim', 'Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam'].map(d => (
@@ -529,7 +529,7 @@ const WeekView: React.FC<{
     const hours = Array.from({ length: 24 }, (_, i) => i);
 
     return (
-        <div className="bg-card border border-border rounded-xl overflow-hidden">
+        <div className="bg-card border border-border rounded-lg overflow-hidden">
             {/* Days header */}
             <div className="grid grid-cols-8 border-b border-border">
                 <div className="p-3 text-xs font-medium text-muted-foreground border-r border-border">
@@ -618,17 +618,17 @@ const EventCard: React.FC<{
             className={cn(
                 "w-full flex items-center gap-4 p-4 rounded-lg border text-left transition-colors",
                 isHappening 
-                    ? "border-green-500 bg-green-50 dark:bg-green-950/20" 
+                    ? "border-foreground bg-foreground/5" 
                     : isPast 
                     ? "border-border bg-muted/30 opacity-60" 
-                    : "border-border hover:bg-muted/50 hover:border-primary/30"
+                    : "border-border hover:bg-muted/50"
             )}
         >
             {/* Heure */}
             <div className="text-center shrink-0 w-16">
                 <div className={cn(
                     "text-lg font-semibold",
-                    isHappening && "text-green-600 dark:text-green-400"
+                    isHappening && "text-foreground"
                 )}>
                     {isAllDay ? '—' : startTime.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}
                 </div>
@@ -640,7 +640,7 @@ const EventCard: React.FC<{
             {/* Divider */}
             <div className={cn(
                 "w-1 h-12 rounded-full shrink-0",
-                isHappening ? "bg-green-500" : isPast ? "bg-muted" : "bg-primary"
+                isHappening ? "bg-foreground" : isPast ? "bg-muted" : "bg-foreground"
             )} />
             
             {/* Content */}
@@ -650,12 +650,12 @@ const EventCard: React.FC<{
                         {event.summary || 'Sans titre'}
                     </h4>
                     {isHappening && (
-                        <span className="px-2 py-0.5 text-xs font-medium bg-green-500 text-white rounded">
+                        <span className="px-2 py-0.5 text-xs font-medium bg-foreground text-background rounded">
                             En cours
                         </span>
                     )}
                     {event.hangoutLink && (
-                        <Video className="h-4 w-4 text-blue-500 shrink-0" />
+                        <Video className="h-4 w-4 text-muted-foreground shrink-0" />
                     )}
                 </div>
 
@@ -682,12 +682,7 @@ const EventCard: React.FC<{
                     target="_blank"
                     rel="noreferrer"
                     onClick={(e) => e.stopPropagation()}
-                    className={cn(
-                        "px-3 py-1.5 text-sm font-medium rounded-lg shrink-0",
-                        isHappening 
-                            ? "bg-green-500 text-white hover:bg-green-600"
-                            : "bg-blue-500 text-white hover:bg-blue-600"
-                    )}
+                    className="px-3 py-1.5 text-sm font-medium rounded-lg shrink-0 bg-foreground text-background hover:bg-foreground/90"
                 >
                     {isHappening ? 'Rejoindre' : 'Meet'}
                 </a>
@@ -720,14 +715,14 @@ const EventDetailModal: React.FC<{
                 className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50"
                 onClick={onClose}
             />
-            <div className="fixed inset-x-4 top-[10%] z-50 mx-auto max-w-2xl bg-background border border-border rounded-xl shadow-2xl overflow-hidden">
+            <div className="fixed inset-x-4 top-[10%] z-50 mx-auto max-w-2xl bg-background border border-border rounded-lg shadow-sm overflow-hidden">
                 {/* Header */}
                 <div className="p-6 border-b border-border">
                     <div className="flex items-start justify-between gap-4">
                         <div className="flex-1">
                             <div className="flex items-center gap-2 mb-2">
                                 {isHappening && (
-                                    <span className="px-2 py-1 text-xs font-medium bg-green-500 text-white rounded">
+                                    <span className="px-2 py-1 text-xs font-medium bg-foreground text-background rounded">
                                         En cours
                                     </span>
                                 )}
@@ -737,7 +732,7 @@ const EventDetailModal: React.FC<{
                                     </span>
                                 )}
                                 {event.hangoutLink && (
-                                    <span className="px-2 py-1 text-xs font-medium bg-blue-100 dark:bg-blue-950 text-blue-600 dark:text-blue-400 rounded flex items-center gap-1">
+                                    <span className="px-2 py-1 text-xs font-medium bg-muted text-foreground rounded flex items-center gap-1">
                                         <Video className="h-3 w-3" />
                                         Visio
                                     </span>
@@ -813,9 +808,9 @@ const EventDetailModal: React.FC<{
                                         <div key={i} className="flex items-center gap-2 text-sm">
                                             <div className={cn(
                                                 "h-2 w-2 rounded-full",
-                                                attendee.responseStatus === 'accepted' ? "bg-green-500" :
-                                                attendee.responseStatus === 'declined' ? "bg-red-500" :
-                                                attendee.responseStatus === 'tentative' ? "bg-yellow-500" :
+                                                attendee.responseStatus === 'accepted' ? "bg-foreground" :
+                                                attendee.responseStatus === 'declined' ? "bg-muted-foreground" :
+                                                attendee.responseStatus === 'tentative' ? "bg-muted-foreground/50" :
                                                 "bg-muted-foreground"
                                             )} />
                                             <span className="text-muted-foreground">{attendee.email}</span>
@@ -843,12 +838,7 @@ const EventDetailModal: React.FC<{
                             href={event.hangoutLink}
                             target="_blank"
                             rel="noreferrer"
-                            className={cn(
-                                "flex-1 px-4 py-2.5 rounded-lg font-medium text-center flex items-center justify-center gap-2",
-                                isHappening
-                                    ? "bg-green-500 text-white hover:bg-green-600"
-                                    : "bg-blue-500 text-white hover:bg-blue-600"
-                            )}
+                            className="flex-1 px-4 py-2.5 rounded-lg font-medium text-center flex items-center justify-center gap-2 bg-foreground text-background hover:bg-foreground/90"
                         >
                             <Video className="h-4 w-4" />
                             {isHappening ? 'Rejoindre maintenant' : 'Rejoindre la visio'}

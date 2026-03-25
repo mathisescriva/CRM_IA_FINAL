@@ -44,11 +44,11 @@ export const Toolbox: React.FC = () => {
 
     const getIcon = (type: string) => {
         switch (type) {
-            case 'pdf': return <FileText className="h-6 w-6 text-red-500" />;
-            case 'sheet': return <FileSpreadsheet className="h-6 w-6 text-green-500" />;
-            case 'image': return <ImageIcon className="h-6 w-6 text-purple-500" />;
-            case 'doc': return <FileText className="h-6 w-6 text-blue-500" />;
-            default: return <File className="h-6 w-6 text-slate-400" />;
+            case 'pdf': return <FileText className="h-6 w-6 text-muted-foreground" />;
+            case 'sheet': return <FileSpreadsheet className="h-6 w-6 text-muted-foreground" />;
+            case 'image': return <ImageIcon className="h-6 w-6 text-muted-foreground" />;
+            case 'doc': return <FileText className="h-6 w-6 text-muted-foreground" />;
+            default: return <File className="h-6 w-6 text-muted-foreground" />;
         }
     };
 
@@ -56,8 +56,8 @@ export const Toolbox: React.FC = () => {
         <div className="space-y-6 relative h-full flex flex-col">
             <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
                 <div>
-                    <h1 className="text-3xl font-bold tracking-tight text-slate-900 dark:text-slate-50">Toolbox</h1>
-                    <p className="text-slate-500 dark:text-slate-400">Manage your global sales assets, brochures, and templates.</p>
+                    <h1 className="text-3xl font-bold tracking-tight text-foreground">Toolbox</h1>
+                    <p className="text-muted-foreground">Manage your global sales assets, brochures, and templates.</p>
                 </div>
                 <button 
                     onClick={() => fileInputRef.current?.click()}
@@ -74,14 +74,14 @@ export const Toolbox: React.FC = () => {
                 />
             </div>
 
-            <div className="flex items-center gap-4 bg-white dark:bg-slate-900 p-4 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm">
-                <Search className="h-5 w-5 text-slate-400" />
+            <div className="flex items-center gap-4 bg-card p-4 rounded-lg border border-border shadow-sm">
+                <Search className="h-5 w-5 text-muted-foreground" />
                 <input 
                     type="text" 
                     placeholder="Search documents..." 
                     value={searchTerm}
                     onChange={(e) => setSearchTerm(e.target.value)}
-                    className="flex-1 bg-transparent border-none outline-none text-sm text-slate-900 dark:text-slate-100 placeholder:text-slate-400"
+                    className="flex-1 bg-transparent border-none outline-none text-sm text-foreground placeholder:text-muted-foreground"
                 />
             </div>
 
@@ -89,21 +89,21 @@ export const Toolbox: React.FC = () => {
                 {filteredItems.map((item) => (
                     <div 
                         key={item.id} 
-                        className="group relative bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-4 hover:shadow-md transition-all flex flex-col items-center text-center cursor-pointer"
+                        className="group relative bg-card border border-border rounded-lg p-4 hover:shadow-sm transition-all flex flex-col items-center text-center cursor-pointer"
                         onClick={() => setPreviewItem(item)}
                     >
-                        <div className="h-16 w-16 bg-slate-50 dark:bg-slate-800 rounded-lg flex items-center justify-center mb-3 group-hover:scale-105 transition-transform">
+                        <div className="h-16 w-16 bg-muted rounded-lg flex items-center justify-center mb-3 group-hover:scale-105 transition-transform">
                             {getIcon(item.type)}
                         </div>
-                        <h3 className="text-sm font-medium text-slate-900 dark:text-slate-100 truncate w-full mb-1" title={item.name}>
+                        <h3 className="text-sm font-medium text-foreground truncate w-full mb-1" title={item.name}>
                             {item.name}
                         </h3>
-                        <p className="text-xs text-slate-500">{item.size} • {new Date(item.createdAt).toLocaleDateString()}</p>
+                        <p className="text-xs text-muted-foreground">{item.size} • {new Date(item.createdAt).toLocaleDateString()}</p>
                         
                         <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity flex gap-1">
                             <button 
                                 onClick={(e) => { e.stopPropagation(); handleDelete(item.id); }}
-                                className="p-1.5 bg-white dark:bg-slate-800 text-slate-400 hover:text-red-500 rounded-md shadow-sm border border-slate-100 dark:border-slate-700"
+                                className="p-1.5 bg-card text-muted-foreground hover:text-destructive rounded-md shadow-sm border border-border"
                             >
                                 <Trash2 className="h-3.5 w-3.5" />
                             </button>
@@ -113,7 +113,7 @@ export const Toolbox: React.FC = () => {
             </div>
 
             {filteredItems.length === 0 && (
-                <div className="flex-1 flex flex-col items-center justify-center text-slate-400 border-2 border-dashed border-slate-200 dark:border-slate-800 rounded-xl p-12">
+                <div className="flex-1 flex flex-col items-center justify-center text-muted-foreground border-2 border-dashed border-border rounded-lg p-12">
                     <File className="h-12 w-12 mb-3 opacity-20" />
                     <p>No documents found.</p>
                 </div>
@@ -121,42 +121,42 @@ export const Toolbox: React.FC = () => {
 
             {/* Preview Modal */}
             {previewItem && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4 animate-in fade-in">
-                    <div className="bg-white dark:bg-slate-900 w-full max-w-4xl h-[80vh] rounded-xl shadow-2xl flex flex-col overflow-hidden">
-                        <div className="flex items-center justify-between p-4 border-b border-slate-100 dark:border-slate-800">
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/60 backdrop-blur-sm p-4 animate-in fade-in">
+                    <div className="bg-card w-full max-w-4xl h-[80vh] rounded-lg shadow-sm flex flex-col overflow-hidden">
+                        <div className="flex items-center justify-between p-4 border-b border-border">
                             <div className="flex items-center gap-3">
                                 {getIcon(previewItem.type)}
                                 <div>
-                                    <h3 className="font-semibold text-slate-900 dark:text-slate-100">{previewItem.name}</h3>
-                                    <p className="text-xs text-slate-500">{previewItem.size}</p>
+                                    <h3 className="font-semibold text-foreground">{previewItem.name}</h3>
+                                    <p className="text-xs text-muted-foreground">{previewItem.size}</p>
                                 </div>
                             </div>
                             <div className="flex gap-2">
                                 <a 
                                     href={previewItem.url} 
                                     download={previewItem.name}
-                                    className="px-3 py-1.5 text-sm font-medium bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 rounded-md transition-colors"
+                                    className="px-3 py-1.5 text-sm font-medium bg-muted hover:bg-muted/80 text-foreground rounded-md transition-colors"
                                 >
                                     Download
                                 </a>
                                 <button 
                                     onClick={() => setPreviewItem(null)}
-                                    className="p-1.5 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-md"
+                                    className="p-1.5 hover:bg-muted rounded-md"
                                 >
                                     <span className="sr-only">Close</span>
-                                    <svg className="h-5 w-5 text-slate-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <svg className="h-5 w-5 text-muted-foreground" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
                                     </svg>
                                 </button>
                             </div>
                         </div>
-                        <div className="flex-1 bg-slate-100 dark:bg-slate-950 flex items-center justify-center p-4 overflow-auto">
+                        <div className="flex-1 bg-muted flex items-center justify-center p-4 overflow-auto">
                             {previewItem.type === 'image' ? (
-                                <img src={previewItem.url} alt={previewItem.name} className="max-w-full max-h-full object-contain shadow-lg" />
+                                <img src={previewItem.url} alt={previewItem.name} className="max-w-full max-h-full object-contain shadow-sm" />
                             ) : previewItem.type === 'pdf' ? (
-                                <iframe src={previewItem.url} className="w-full h-full border-none shadow-lg bg-white" title="PDF Preview" />
+                                <iframe src={previewItem.url} className="w-full h-full border-none shadow-sm bg-card" title="PDF Preview" />
                             ) : (
-                                <div className="text-center text-slate-500">
+                                <div className="text-center text-muted-foreground">
                                     <FileText className="h-16 w-16 mx-auto mb-4 opacity-50" />
                                     <p>Preview not available for this file type.</p>
                                 </div>

@@ -37,11 +37,11 @@ const DEAL_STAGE_LABELS: Record<string, string> = {
 };
 
 const DEAL_STAGE_COLORS: Record<string, string> = {
-    qualification: 'bg-blue-500',
-    proposal: 'bg-orange-500',
-    negotiation: 'bg-purple-500',
-    closed_won: 'bg-green-500',
-    closed_lost: 'bg-red-500',
+    qualification: 'bg-primary/50',
+    proposal: 'bg-primary/70',
+    negotiation: 'bg-primary',
+    closed_won: 'bg-primary',
+    closed_lost: 'bg-destructive',
 };
 
 const Analytics: React.FC = () => {
@@ -142,14 +142,14 @@ const Analytics: React.FC = () => {
                     label="Pipeline pondéré"
                     value={`${(weightedPipeline / 1000).toFixed(0)}k€`}
                     subtext="Pondéré par probabilité"
-                    color="text-blue-500 bg-blue-500/10"
+                    color="text-primary bg-primary/10"
                 />
                 <KPICard
                     icon={Trophy}
                     label="Deals gagnés"
                     value={`${(wonValue / 1000).toFixed(0)}k€`}
                     subtext={`${wonDeals.length} deal${wonDeals.length > 1 ? 's' : ''}`}
-                    color="text-green-500 bg-green-500/10"
+                    color="text-primary bg-primary/10"
                     success
                 />
                 <KPICard
@@ -157,7 +157,7 @@ const Analytics: React.FC = () => {
                     label="Tâches"
                     value={`${tasks.filter(t => t.status === 'completed').length}/${tasks.length}`}
                     subtext={overdueTasks.length > 0 ? `${overdueTasks.length} en retard` : 'Tout à jour'}
-                    color={overdueTasks.length > 0 ? "text-red-500 bg-red-500/10" : "text-green-500 bg-green-500/10"}
+                    color={overdueTasks.length > 0 ? "text-destructive bg-destructive/10" : "text-primary bg-primary/10"}
                     alert={overdueTasks.length > 0}
                 />
             </div>
@@ -175,7 +175,7 @@ const Analytics: React.FC = () => {
                             Voir le pipeline <ArrowRight className="h-3 w-3" />
                         </button>
                     </div>
-                    <div className="p-5 rounded-xl border border-border bg-card space-y-4">
+                    <div className="p-5 rounded-lg border border-border bg-card space-y-4">
                         {['qualification', 'proposal', 'negotiation', 'closed_won', 'closed_lost'].map(stage => {
                             const stageDeals = deals.filter(d => d.stage === stage);
                             const stageValue = stageDeals.reduce((sum, d) => sum + (d.budget || d.value || 0), 0);
@@ -206,7 +206,7 @@ const Analytics: React.FC = () => {
                     <h2 className="text-sm font-medium">Vue rapide</h2>
                     
                     {/* Activity by member */}
-                    <div className="p-5 rounded-xl border border-border bg-card space-y-3">
+                    <div className="p-5 rounded-lg border border-border bg-card space-y-3">
                         <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Activité équipe</h3>
                         {analytics?.activityByMember && Object.entries(analytics.activityByMember).map(([name, count]) => (
                             <div key={name} className="flex items-center justify-between">
@@ -225,7 +225,7 @@ const Analytics: React.FC = () => {
                     </div>
 
                     {/* Quick Numbers */}
-                    <div className="p-5 rounded-xl border border-border bg-card space-y-3">
+                    <div className="p-5 rounded-lg border border-border bg-card space-y-3">
                         <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">En résumé</h3>
                         <QuickNumber icon={Building2} label="Clients actifs" value={companyCount} />
                         <QuickNumber icon={Briefcase} label="Deals ouverts" value={openDeals.length} />
@@ -240,7 +240,7 @@ const Analytics: React.FC = () => {
                 <div className="flex items-center justify-between">
                     <h2 className="text-sm font-medium">Top deals en cours</h2>
                 </div>
-                <div className="p-5 rounded-xl border border-border bg-card space-y-3">
+                <div className="p-5 rounded-lg border border-border bg-card space-y-3">
                     {openDeals.sort((a, b) => b.value - a.value).slice(0, 5).map(deal => (
                         <div key={deal.id} className="flex items-center gap-4">
                             <div className="flex-1 min-w-0">
@@ -248,9 +248,9 @@ const Analytics: React.FC = () => {
                                     <p className="text-sm font-medium truncate">{deal.title}</p>
                                     <span className={cn(
                                         "text-[10px] font-medium px-1.5 py-0.5 rounded-full",
-                                        deal.probability >= 70 ? "bg-green-500/10 text-green-500" :
-                                        deal.probability >= 40 ? "bg-orange-500/10 text-orange-500" :
-                                        "bg-red-500/10 text-red-500"
+                                        deal.probability >= 70 ? "bg-primary/10 text-primary" :
+                                        deal.probability >= 40 ? "bg-muted text-muted-foreground" :
+                                        "bg-destructive/10 text-destructive"
                                     )}>
                                         {deal.probability}%
                                     </span>
@@ -273,21 +273,21 @@ const Analytics: React.FC = () => {
             {overdueTasks.length > 0 && (
                 <div className="space-y-4">
                     <h2 className="text-sm font-medium flex items-center gap-2">
-                        <AlertCircle className="h-4 w-4 text-red-500" />
+                        <AlertCircle className="h-4 w-4 text-destructive" />
                         Tâches en retard
                     </h2>
-                    <div className="p-5 rounded-xl border border-red-500/20 bg-red-500/5 space-y-2">
+                    <div className="p-5 rounded-lg border border-destructive/20 bg-destructive/5 space-y-2">
                         {overdueTasks.slice(0, 5).map(task => (
                             <button
                                 key={task.id}
                                 onClick={() => navigate('/tasks')}
-                                className="w-full flex items-center justify-between p-3 rounded-lg hover:bg-red-500/10 transition-colors text-left"
+                                className="w-full flex items-center justify-between p-3 rounded-lg hover:bg-destructive/10 transition-colors text-left"
                             >
                                 <div>
                                     <p className="text-sm font-medium">{task.title}</p>
                                     <p className="text-xs text-muted-foreground">{task.companyName}</p>
                                 </div>
-                                <span className="text-xs text-red-500 font-medium">
+                                <span className="text-xs text-destructive font-medium">
                                     {task.dueDate ? `Échéance: ${new Date(task.dueDate).toLocaleDateString('fr-FR')}` : ''}
                                 </span>
                             </button>
@@ -311,8 +311,8 @@ const KPICard: React.FC<{
     alert?: boolean;
 }> = ({ icon: Icon, label, value, subtext, color, success, alert }) => (
     <div className={cn(
-        "p-5 rounded-xl border",
-        alert ? "border-red-500/30" : success ? "border-green-500/30" : "border-border"
+        "p-5 rounded-lg border",
+        alert ? "border-destructive/30" : success ? "border-primary/30" : "border-border"
     )}>
         <div className="flex items-center gap-3 mb-3">
             <div className={cn("h-9 w-9 rounded-lg flex items-center justify-center", color)}>
@@ -323,7 +323,7 @@ const KPICard: React.FC<{
         <p className="text-xs text-muted-foreground mt-1">{label}</p>
         <p className={cn(
             "text-xs mt-0.5",
-            alert ? "text-red-500" : success ? "text-green-500" : "text-muted-foreground"
+            alert ? "text-destructive" : success ? "text-primary" : "text-muted-foreground"
         )}>{subtext}</p>
     </div>
 );
@@ -336,10 +336,10 @@ const QuickNumber: React.FC<{
 }> = ({ icon: Icon, label, value, alert }) => (
     <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
-            <Icon className={cn("h-4 w-4", alert ? "text-red-500" : "text-muted-foreground")} />
+            <Icon className={cn("h-4 w-4", alert ? "text-destructive" : "text-muted-foreground")} />
             <span className="text-sm">{label}</span>
         </div>
-        <span className={cn("text-sm font-semibold", alert && "text-red-500")}>{value}</span>
+        <span className={cn("text-sm font-semibold", alert && "text-destructive")}>{value}</span>
     </div>
 );
 

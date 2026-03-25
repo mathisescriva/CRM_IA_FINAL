@@ -217,11 +217,11 @@ export const ScheduleMeetingModal: React.FC<ScheduleMeetingModalProps> = ({
                 onClick={(e) => e.stopPropagation()}
                 style={{ zIndex: 9999 }}
             >
-                <div className="bg-background border border-border rounded-2xl shadow-2xl overflow-hidden max-h-[90vh] overflow-y-auto">
+                <div className="bg-background border border-border rounded-lg shadow-sm overflow-hidden max-h-[90vh] overflow-y-auto">
                     {/* Header */}
                     <div className="flex items-center justify-between px-6 py-4 border-b border-border bg-gradient-to-r from-primary/5 to-transparent">
                         <div className="flex items-center gap-3">
-                            <div className="h-10 w-10 rounded-xl bg-primary/10 flex items-center justify-center">
+                            <div className="h-10 w-10 rounded-lg bg-primary/10 flex items-center justify-center">
                                 <Calendar className="h-5 w-5 text-primary" />
                             </div>
                             <div>
@@ -240,7 +240,7 @@ export const ScheduleMeetingModal: React.FC<ScheduleMeetingModalProps> = ({
                         <div className="p-8 text-center">
                             {gmailService.getConfig().clientId ? (
                                 <>
-                                    <div className="h-16 w-16 rounded-2xl bg-primary/10 flex items-center justify-center mx-auto mb-4">
+                                    <div className="h-16 w-16 rounded-lg bg-primary/10 flex items-center justify-center mx-auto mb-4">
                                         <Calendar className="h-8 w-8 text-primary" />
                                     </div>
                                     <h3 className="text-lg font-semibold mb-2">Connexion requise</h3>
@@ -249,15 +249,15 @@ export const ScheduleMeetingModal: React.FC<ScheduleMeetingModalProps> = ({
                                     </p>
                                     <button
                                         onClick={handleLogin}
-                                        className="px-6 py-3 bg-primary text-primary-foreground rounded-xl font-medium hover:bg-primary/90 transition-colors"
+                                        className="px-6 py-3 bg-primary text-primary-foreground rounded-lg font-medium hover:bg-primary/90 transition-colors"
                                     >
                                         Connecter Google Calendar
                                     </button>
                                 </>
                             ) : (
                                 <>
-                                    <div className="h-16 w-16 rounded-2xl bg-orange-100 dark:bg-orange-950/30 flex items-center justify-center mx-auto mb-4">
-                                        <AlertCircle className="h-8 w-8 text-orange-500" />
+                                    <div className="h-16 w-16 rounded-lg bg-destructive/10 flex items-center justify-center mx-auto mb-4">
+                                        <AlertCircle className="h-8 w-8 text-destructive" />
                                     </div>
                                     <h3 className="text-lg font-semibold mb-2">Configuration Google requise</h3>
                                     <p className="text-muted-foreground mb-4 max-w-md mx-auto">
@@ -286,7 +286,7 @@ export const ScheduleMeetingModal: React.FC<ScheduleMeetingModalProps> = ({
                                     value={form.title}
                                     onChange={e => setForm(prev => ({ ...prev, title: e.target.value }))}
                                     placeholder="Ex: Présentation de la solution"
-                                    className="w-full px-4 py-2.5 rounded-xl border-2 border-border bg-background text-base font-medium placeholder:text-muted-foreground/60 focus:outline-none focus:border-primary transition-all"
+                                    className="w-full px-4 py-2.5 rounded-lg border-2 border-border bg-background text-base font-medium placeholder:text-muted-foreground/60 focus:outline-none focus:border-primary transition-all"
                                     autoFocus
                                 />
                             </div>
@@ -300,7 +300,7 @@ export const ScheduleMeetingModal: React.FC<ScheduleMeetingModalProps> = ({
                                         required
                                         value={form.date}
                                         onChange={e => setForm(prev => ({ ...prev, date: e.target.value }))}
-                                        className="w-full px-3 py-2.5 rounded-xl border border-border bg-background text-sm focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/20 transition-all"
+                                        className="w-full px-3 py-2.5 rounded-lg border border-border bg-background text-sm focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/20 transition-all"
                                     />
                                 </div>
                                 <div className="col-span-1">
@@ -310,7 +310,7 @@ export const ScheduleMeetingModal: React.FC<ScheduleMeetingModalProps> = ({
                                         required
                                         value={form.startTime}
                                         onChange={e => setForm(prev => ({ ...prev, startTime: e.target.value }))}
-                                        className="w-full px-3 py-2.5 rounded-xl border border-border bg-background text-sm focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/20 transition-all"
+                                        className="w-full px-3 py-2.5 rounded-lg border border-border bg-background text-sm focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/20 transition-all"
                                     />
                                 </div>
                                 <div className="col-span-1">
@@ -318,7 +318,7 @@ export const ScheduleMeetingModal: React.FC<ScheduleMeetingModalProps> = ({
                                     <select
                                         value={form.duration}
                                         onChange={e => setForm(prev => ({ ...prev, duration: parseInt(e.target.value) }))}
-                                        className="w-full px-3 py-2.5 rounded-xl border border-border bg-background text-sm focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/20 transition-all"
+                                        className="w-full px-3 py-2.5 rounded-lg border border-border bg-background text-sm focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/20 transition-all"
                                     >
                                         <option value={15}>15 min</option>
                                         <option value={30}>30 min</option>
@@ -387,13 +387,13 @@ export const ScheduleMeetingModal: React.FC<ScheduleMeetingModalProps> = ({
                                             onFocus={() => setShowSuggestions(true)}
                                             onBlur={() => setTimeout(() => setShowSuggestions(false), 200)}
                                             placeholder="Rechercher un contact par nom..."
-                                            className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-border bg-background text-sm focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/20 transition-all"
+                                            className="w-full pl-10 pr-4 py-2.5 rounded-lg border border-border bg-background text-sm focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/20 transition-all"
                                         />
                                     </div>
                                     
                                     {/* Suggestions dropdown */}
                                     {showSuggestions && filteredContacts.length > 0 && (
-                                        <div className="absolute z-50 w-full mt-1 bg-popover border border-border rounded-xl shadow-lg max-h-60 overflow-y-auto">
+                                        <div className="absolute z-50 w-full mt-1 bg-popover border border-border rounded-lg shadow-sm max-h-60 overflow-y-auto">
                                             {filteredContacts.slice(0, 8).map(contact => (
                                                 <button
                                                     key={contact.id}
@@ -430,7 +430,7 @@ export const ScheduleMeetingModal: React.FC<ScheduleMeetingModalProps> = ({
                                     )}
                                     
                                     {showSuggestions && searchQuery && filteredContacts.length === 0 && (
-                                        <div className="absolute z-50 w-full mt-1 bg-popover border border-border rounded-xl shadow-lg p-4 text-center text-sm text-muted-foreground">
+                                        <div className="absolute z-50 w-full mt-1 bg-popover border border-border rounded-lg shadow-sm p-4 text-center text-sm text-muted-foreground">
                                             Aucun contact trouvé
                                         </div>
                                     )}
@@ -464,7 +464,7 @@ export const ScheduleMeetingModal: React.FC<ScheduleMeetingModalProps> = ({
                                             </div>
                                         ))}
                                         <p className="text-xs text-muted-foreground flex items-center gap-1.5 pt-1">
-                                            <Check className="h-3 w-3 text-green-500" />
+                                            <Check className="h-3 w-3 text-primary" />
                                             Une invitation sera envoyée à {selectedAttendees.length > 1 ? 'ces participants' : 'ce participant'}
                                         </p>
                                     </div>
@@ -479,7 +479,7 @@ export const ScheduleMeetingModal: React.FC<ScheduleMeetingModalProps> = ({
                                     value={form.location}
                                     onChange={e => setForm(prev => ({ ...prev, location: e.target.value }))}
                                     placeholder="Ex: Bureau Lexia, 123 Rue de Paris"
-                                    className="w-full px-3 py-2.5 rounded-xl border border-border bg-background text-sm focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/20"
+                                    className="w-full px-3 py-2.5 rounded-lg border border-border bg-background text-sm focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/20"
                                 />
                             </div>
 
@@ -491,19 +491,19 @@ export const ScheduleMeetingModal: React.FC<ScheduleMeetingModalProps> = ({
                                     onChange={e => setForm(prev => ({ ...prev, description: e.target.value }))}
                                     placeholder="Ordre du jour, points à aborder..."
                                     rows={3}
-                                    className="w-full px-3 py-2.5 rounded-xl border border-border bg-background text-sm focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/20 resize-none"
+                                    className="w-full px-3 py-2.5 rounded-lg border border-border bg-background text-sm focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/20 resize-none"
                                 />
                             </div>
 
                             {/* Add Google Meet */}
-                            <label className="flex items-center gap-3 p-3 rounded-xl border border-border hover:bg-muted/50 transition-colors cursor-pointer">
+                            <label className="flex items-center gap-3 p-3 rounded-lg border border-border hover:bg-muted/50 transition-colors cursor-pointer">
                                 <input
                                     type="checkbox"
                                     checked={form.addMeet}
                                     onChange={e => setForm(prev => ({ ...prev, addMeet: e.target.checked }))}
                                     className="rounded border-border"
                                 />
-                                <Video className="h-5 w-5 text-blue-500" />
+                                <Video className="h-5 w-5 text-primary" />
                                 <div className="flex-1">
                                     <p className="text-sm font-medium">Ajouter un lien Google Meet</p>
                                     <p className="text-xs text-muted-foreground">
@@ -517,14 +517,14 @@ export const ScheduleMeetingModal: React.FC<ScheduleMeetingModalProps> = ({
                                 <button
                                     type="button"
                                     onClick={onClose}
-                                    className="px-4 py-2.5 text-sm text-muted-foreground hover:bg-muted rounded-xl transition-colors"
+                                    className="px-4 py-2.5 text-sm text-muted-foreground hover:bg-muted rounded-lg transition-colors"
                                 >
                                     Annuler
                                 </button>
                                 <button
                                     type="submit"
                                     disabled={loading || !form.title}
-                                    className="px-5 py-2.5 text-sm font-medium bg-primary text-primary-foreground rounded-xl hover:bg-primary/90 transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+                                    className="px-5 py-2.5 text-sm font-medium bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
                                 >
                                     {loading ? (
                                         <>

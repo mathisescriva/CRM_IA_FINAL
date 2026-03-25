@@ -19,6 +19,7 @@ import {
 import { workspaceService, Task } from '../services/workspace';
 import { companyService } from '../services/supabase';
 import { authService, LEXIA_TEAM } from '../services/auth';
+import { googleDriveService } from '../services/googleDrive';
 import { Project, ProjectStatus, DealStage, Company, ProjectDocument, ProjectNote } from '../types';
 import { cn, getInitials, formatRelativeTime } from '../lib/utils';
 import { Card } from '../components/ui/Card';
@@ -31,18 +32,18 @@ import { useApp } from '../contexts/AppContext';
 
 // ─── CONFIG ────────────────────────────────────────────────────
 const STATUS_CONFIG: Record<ProjectStatus, { label: string; color: string; bg: string; dot: string }> = {
-    planning: { label: 'Planification', color: 'text-muted-foreground', bg: 'bg-muted/80 dark:bg-muted/40', dot: 'bg-muted-foreground/50' },
-    active: { label: 'En cours', color: 'text-foreground', bg: 'bg-primary/8 dark:bg-primary/10', dot: 'bg-primary' },
-    on_hold: { label: 'En pause', color: 'text-amber-600/80', bg: 'bg-amber-50 dark:bg-amber-900/15', dot: 'bg-amber-400' },
-    completed: { label: 'Terminé', color: 'text-emerald-600/80', bg: 'bg-emerald-50 dark:bg-emerald-900/15', dot: 'bg-emerald-400' },
-    cancelled: { label: 'Annulé', color: 'text-muted-foreground', bg: 'bg-muted/60 dark:bg-muted/30', dot: 'bg-muted-foreground/40' },
+    planning: { label: 'Planification', color: 'text-muted-foreground', bg: 'bg-muted/80', dot: 'bg-muted-foreground/50' },
+    active: { label: 'En cours', color: 'text-foreground', bg: 'bg-primary/8', dot: 'bg-primary' },
+    on_hold: { label: 'En pause', color: 'text-muted-foreground', bg: 'bg-muted/60', dot: 'bg-muted-foreground/60' },
+    completed: { label: 'Terminé', color: 'text-muted-foreground', bg: 'bg-muted/60', dot: 'bg-muted-foreground/60' },
+    cancelled: { label: 'Annulé', color: 'text-muted-foreground', bg: 'bg-muted/60', dot: 'bg-muted-foreground/40' },
 };
 
 const STAGE_CONFIG: Record<DealStage, { label: string; color: string; bg: string }> = {
-    qualification: { label: 'Qualification', color: 'text-muted-foreground', bg: 'bg-foreground/70 dark:bg-foreground/50' },
-    proposal: { label: 'Proposition', color: 'text-foreground/80', bg: 'bg-foreground/50 dark:bg-foreground/40' },
+    qualification: { label: 'Qualification', color: 'text-muted-foreground', bg: 'bg-foreground/70' },
+    proposal: { label: 'Proposition', color: 'text-foreground/80', bg: 'bg-foreground/50' },
     negotiation: { label: 'Négociation', color: 'text-foreground/80', bg: 'bg-primary/70' },
-    closed_won: { label: 'Gagné', color: 'text-emerald-600/80', bg: 'bg-primary' },
+    closed_won: { label: 'Gagné', color: 'text-foreground', bg: 'bg-primary' },
     closed_lost: { label: 'Perdu', color: 'text-muted-foreground', bg: 'bg-muted-foreground/40' },
 };
 
@@ -161,7 +162,7 @@ const InlineSelect: React.FC<{
                 <ChevronRight className={cn("h-3 w-3 text-muted-foreground/40 transition-transform", open && "rotate-90")} />
             </button>
             {open && (
-                <div className="absolute top-full left-0 mt-1 z-50 bg-background border border-border rounded-xl shadow-xl py-1 min-w-[180px] animate-in fade-in slide-in-from-top-2 duration-150">
+                <div className="absolute top-full left-0 mt-1 z-50 bg-background border border-border rounded-lg shadow-sm py-1 min-w-[180px] animate-in fade-in slide-in-from-top-2 duration-150">
                     {options.map(opt => (
                         <button
                             key={opt.value}
@@ -211,7 +212,7 @@ const DropZone: React.FC<{
         >
             {children}
             {dragging && (
-                <div className="absolute inset-0 z-10 rounded-xl border-2 border-dashed border-primary bg-primary/5 backdrop-blur-[2px] flex items-center justify-center animate-in fade-in duration-150">
+                <div className="absolute inset-0 z-10 rounded-lg border-2 border-dashed border-primary bg-primary/5 backdrop-blur-[2px] flex items-center justify-center animate-in fade-in duration-150">
                     <div className="flex flex-col items-center gap-2 text-primary">
                         <FileUp className="h-8 w-8 animate-bounce" />
                         <p className="text-sm font-medium">Déposer vos fichiers ici</p>
@@ -276,7 +277,7 @@ const ProgressSlider: React.FC<{
                 />
                 <div
                     className={cn(
-                        "absolute top-1/2 -translate-y-1/2 h-5 w-5 rounded-full border-2 border-background shadow-md transition-all",
+                        "absolute top-1/2 -translate-y-1/2 h-5 w-5 rounded-full border-2 border-background shadow-sm transition-all",
                         color,
                         dragging ? "scale-125" : "group-hover:scale-110"
                     )}
@@ -380,7 +381,9 @@ const Projects: React.FC = () => {
         });
     }, [projects, search, statusFilter]);
 
-    const totalBudget = projects.reduce((s, p) => s + p.budget, 0);
+    const pipelineBudget = projects
+        .filter(p => p.stage !== 'closed_won' && p.stage !== 'closed_lost' && p.status !== 'completed' && p.status !== 'cancelled')
+        .reduce((s, p) => s + p.budget, 0);
     const activeCount = projects.filter(p => p.status === 'active').length;
     const avgProgress = projects.length ? Math.round(projects.reduce((s, p) => s + p.progress, 0) / projects.length) : 0;
     const wonValue = projects.filter(p => p.stage === 'closed_won').reduce((s, p) => s + p.budget, 0);
@@ -389,7 +392,26 @@ const Projects: React.FC = () => {
     const updateField = async (field: string, value: any) => {
         if (!selectedId) return;
         setSaving(true);
-        await workspaceService.updateProject(selectedId, { [field]: value } as any);
+
+        const updates: Record<string, any> = { [field]: value };
+
+        if (field === 'stage') {
+            if (value === 'closed_won') {
+                updates.status = 'active';
+            } else if (value === 'closed_lost') {
+                updates.status = 'cancelled';
+            }
+        }
+
+        if (field === 'progress' && value >= 100) {
+            updates.status = 'completed';
+        }
+
+        if (field === 'status' && value === 'completed') {
+            updates.progress = 100;
+        }
+
+        await workspaceService.updateProject(selectedId, updates as any);
         await refreshDetail();
         setSaving(false);
     };
@@ -417,30 +439,114 @@ const Projects: React.FC = () => {
     const handleAddDoc = async () => {
         if (!selectedId) return;
         await workspaceService.addProjectDocument(selectedId, docForm);
+        // Sync to company documents
+        if (selectedProject?.companyId) {
+            try { await companyService.addDocument(selectedProject.companyId, { name: docForm.name, url: docForm.url, type: docForm.type }); } catch (e) { console.warn('Sync doc to company failed:', e); }
+        }
         setShowDocModal(false);
         setDocForm({ name: '', url: '', type: 'pdf' });
         await refreshDetail();
     };
 
+    const [uploading, setUploading] = useState(false);
+    const [driveFiles, setDriveFiles] = useState<any[]>([]);
+    const [showDriveBrowser, setShowDriveBrowser] = useState(false);
+    const [driveSearchQuery, setDriveSearchQuery] = useState('');
+    const [loadingDrive, setLoadingDrive] = useState(false);
+    const fileInputRef = useRef<HTMLInputElement>(null);
+
+    const getFileType = (name: string): string => {
+        const ext = name.split('.').pop()?.toLowerCase() || '';
+        if (['pdf'].includes(ext)) return 'pdf';
+        if (['doc', 'docx'].includes(ext)) return 'doc';
+        if (['xls', 'xlsx', 'csv'].includes(ext)) return 'sheet';
+        if (['ppt', 'pptx'].includes(ext)) return 'slide';
+        if (['png', 'jpg', 'jpeg', 'gif', 'webp'].includes(ext)) return 'image';
+        return 'other';
+    };
+
     const handleFileDrop = async (files: FileList) => {
+        if (!selectedId || !selectedProject) return;
+        setUploading(true);
+        try {
+            const folderName = selectedProject.title || 'Sans titre';
+            for (let i = 0; i < files.length; i++) {
+                const f = files[i];
+                const uploaded = await googleDriveService.uploadFile(f, folderName);
+                const type = googleDriveService.getFileType(uploaded.mimeType);
+                const docData = {
+                    name: uploaded.name,
+                    url: uploaded.webViewLink || `https://drive.google.com/file/d/${uploaded.id}/view`,
+                    type,
+                };
+                await workspaceService.addProjectDocument(selectedId, docData);
+                // Sync to company documents
+                if (selectedProject.companyId) {
+                    try { await companyService.addDocument(selectedProject.companyId, docData); } catch (e) { console.warn('Sync doc to company failed:', e); }
+                }
+            }
+            await refreshDetail();
+        } catch (e: any) {
+            console.error('Upload to Drive failed:', e);
+            // Fallback: store locally
+            for (let i = 0; i < files.length; i++) {
+                const f = files[i];
+                const docData = { name: f.name, url: `file://${f.name}`, type: getFileType(f.name) };
+                await workspaceService.addProjectDocument(selectedId, docData);
+                if (selectedProject.companyId) {
+                    try { await companyService.addDocument(selectedProject.companyId, docData); } catch (e2) { console.warn('Sync doc to company failed:', e2); }
+                }
+            }
+            await refreshDetail();
+        }
+        setUploading(false);
+    };
+
+    const handleFileUploadClick = () => {
+        fileInputRef.current?.click();
+    };
+
+    const handleFileInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+        if (e.target.files && e.target.files.length > 0) {
+            handleFileDrop(e.target.files);
+        }
+        e.target.value = '';
+    };
+
+    const loadDriveFiles = async (query?: string) => {
+        setLoadingDrive(true);
+        try {
+            const files = query
+                ? await googleDriveService.searchFiles(query)
+                : await googleDriveService.listAllFiles();
+            setDriveFiles(files);
+        } catch (e) {
+            console.error('Failed to load Drive files:', e);
+            setDriveFiles([]);
+        }
+        setLoadingDrive(false);
+    };
+
+    const handleBrowseDrive = () => {
+        setShowDriveBrowser(true);
+        loadDriveFiles();
+    };
+
+    const handleLinkDriveFile = async (file: any) => {
         if (!selectedId) return;
-        for (let i = 0; i < files.length; i++) {
-            const f = files[i];
-            const ext = f.name.split('.').pop()?.toLowerCase() || '';
-            const type = ['pdf'].includes(ext) ? 'pdf'
-                : ['doc', 'docx'].includes(ext) ? 'doc'
-                : ['xls', 'xlsx', 'csv'].includes(ext) ? 'sheet'
-                : ['ppt', 'pptx'].includes(ext) ? 'slide'
-                : ['png', 'jpg', 'jpeg', 'gif', 'webp'].includes(ext) ? 'image'
-                : 'other';
-            // For now we store the filename — in production this would upload to storage
-            await workspaceService.addProjectDocument(selectedId, {
-                name: f.name,
-                url: `file://${f.name}`,
-                type,
-            });
+        const type = googleDriveService.getFileType(file.mimeType);
+        const docData = {
+            name: file.name,
+            url: file.webViewLink || `https://drive.google.com/file/d/${file.id}/view`,
+            type,
+        };
+        await workspaceService.addProjectDocument(selectedId, docData);
+        // Sync to company documents
+        if (selectedProject?.companyId) {
+            try { await companyService.addDocument(selectedProject.companyId, docData); } catch (e) { console.warn('Sync doc to company failed:', e); }
         }
         await refreshDetail();
+        setShowDriveBrowser(false);
     };
 
     const handleAddMember = async (userId: string) => {
@@ -575,28 +681,37 @@ const Projects: React.FC = () => {
                     />
                 </Card>
 
-                {/* ── PIPELINE STAGES ───────────────────────── */}
-                <div className="flex items-center gap-1">
-                    {stageSteps.map((stage, i) => {
-                        const cfg = STAGE_CONFIG[stage];
-                        const isActive = i <= currentStageIdx && p.stage !== 'closed_lost';
-                        const isCurrent = stage === p.stage;
-                        return (
-                            <button
-                                key={stage}
-                                onClick={() => updateField('stage', stage)}
-                                className={cn(
-                                    "flex-1 relative h-10 rounded-lg flex items-center justify-center text-xs font-medium transition-all",
-                                    isActive ? cn(cfg.bg, "text-white shadow-sm") : "bg-muted text-muted-foreground hover:bg-muted/80",
-                                    isCurrent && "ring-2 ring-offset-2 ring-offset-background ring-primary/50",
-                                    "hover:scale-[1.02] active:scale-[0.98]"
-                                )}
-                            >
-                                {cfg.label}
-                                {isCurrent && <Sparkles className="h-3 w-3 ml-1 opacity-70" />}
-                            </button>
-                        );
-                    })}
+                {/* ── PHASE COMMERCIALE (Signature) ──────────── */}
+                <div>
+                    <p className="text-[11px] text-muted-foreground font-medium uppercase tracking-wider mb-2">Phase commerciale</p>
+                    <div className="flex items-center gap-1">
+                        {stageSteps.map((stage, i) => {
+                            const cfg = STAGE_CONFIG[stage];
+                            const isActive = i <= currentStageIdx && p.stage !== 'closed_lost';
+                            const isCurrent = stage === p.stage;
+                            return (
+                                <button
+                                    key={stage}
+                                    onClick={() => updateField('stage', stage)}
+                                    className={cn(
+                                        "flex-1 relative h-10 rounded-lg flex items-center justify-center text-xs font-medium transition-all",
+                                        isActive ? cn(cfg.bg, "text-white shadow-sm") : "bg-muted text-muted-foreground hover:bg-muted/80",
+                                        isCurrent && "ring-2 ring-offset-2 ring-offset-background ring-primary/50",
+                                        "hover:scale-[1.02] active:scale-[0.98]"
+                                    )}
+                                >
+                                    {cfg.label}
+                                    {isCurrent && <Sparkles className="h-3 w-3 ml-1 opacity-70" />}
+                                </button>
+                            );
+                        })}
+                    </div>
+                    {p.stage === 'closed_won' && p.status !== 'completed' && (
+                        <p className="text-xs text-muted-foreground mt-2 flex items-center gap-1.5">
+                            <CheckSquare className="h-3.5 w-3.5" />
+                            Deal signé — passez en phase de <strong>réalisation</strong> ci-dessous
+                        </p>
+                    )}
                 </div>
 
                 {/* ── KPI CARDS ─────────────────────────────── */}
@@ -616,7 +731,7 @@ const Projects: React.FC = () => {
                         <div className="flex items-center gap-2">
                             <div className="flex-1 h-1.5 bg-muted rounded-full overflow-hidden">
                                 <div
-                                    className={cn("h-full rounded-full transition-all duration-500", budgetPct > 90 ? "bg-red-500" : budgetPct > 70 ? "bg-amber-500" : "bg-emerald-500")}
+                                    className={cn("h-full rounded-full transition-all duration-500", budgetPct > 90 ? "bg-foreground" : budgetPct > 70 ? "bg-foreground/60" : "bg-foreground/40")}
                                     style={{ width: `${budgetPct}%` }}
                                 />
                             </div>
@@ -704,14 +819,17 @@ const Projects: React.FC = () => {
                     </Card>
                 </div>
 
-                {/* ── PROGRESS ──────────────────────────────── */}
-                <Card className="p-5">
-                    <ProgressSlider
-                        value={p.progress}
-                        onChange={val => updateField('progress', val)}
-                        color={stageCfg.bg}
-                    />
-                </Card>
+                {/* ── RÉALISATION (Avancement) ──────────────── */}
+                <div>
+                    <p className="text-[11px] text-muted-foreground font-medium uppercase tracking-wider mb-2">Réalisation</p>
+                    <Card className="p-5">
+                        <ProgressSlider
+                            value={p.progress}
+                            onChange={val => updateField('progress', val)}
+                            color={stageCfg.bg}
+                        />
+                    </Card>
+                </div>
 
                 {/* ── TABS (Équipe + Drive seulement) ──────── */}
                 <div className="flex items-center gap-1 border-b border-border">
@@ -790,7 +908,7 @@ const Projects: React.FC = () => {
                         </div>
                         {(p.members || []).length === 0 ? (
                             <button onClick={() => setShowMemberModal(true)}
-                                className="w-full py-8 border-2 border-dashed border-border rounded-xl text-sm text-muted-foreground hover:border-primary hover:text-primary transition-all flex flex-col items-center gap-2">
+                                className="w-full py-8 border-2 border-dashed border-border rounded-lg text-sm text-muted-foreground hover:border-primary hover:text-primary transition-all flex flex-col items-center gap-2">
                                 <Users className="h-8 w-8" /><span>Ajouter des membres</span>
                             </button>
                         ) : (
@@ -798,7 +916,7 @@ const Projects: React.FC = () => {
                                 {(p.members || []).map(m => {
                                     const member = LEXIA_TEAM.find(t => t.id === m.userId);
                                     return (
-                                        <div key={m.userId} className="flex items-center gap-3 p-3 rounded-xl border border-border hover:border-primary/20 hover:shadow-sm transition-all group">
+                                        <div key={m.userId} className="flex items-center gap-3 p-3 rounded-lg border border-border hover:border-primary/20 hover:shadow-sm transition-all group">
                                             <Avatar className="h-10 w-10">
                                                 {member?.avatarUrl && <AvatarImage src={member.avatarUrl} />}
                                                 <AvatarFallback>{getInitials(m.userName || '')}</AvatarFallback>
@@ -819,7 +937,7 @@ const Projects: React.FC = () => {
                         {/* Add member modal */}
                         {showMemberModal && (
                             <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm" onClick={() => setShowMemberModal(false)}>
-                                <div className="bg-background rounded-xl shadow-2xl w-full max-w-sm p-5 space-y-4" onClick={e => e.stopPropagation()}>
+                                <div className="bg-background rounded-lg shadow-sm w-full max-w-sm p-5 space-y-4" onClick={e => e.stopPropagation()}>
                                     <div className="flex items-center justify-between">
                                         <h3 className="font-semibold flex items-center gap-2"><UserPlus className="h-4 w-4" /> Ajouter un membre</h3>
                                         <Button variant="ghost" size="icon" onClick={() => setShowMemberModal(false)} className="h-8 w-8"><X className="h-4 w-4" /></Button>
@@ -827,7 +945,7 @@ const Projects: React.FC = () => {
                                     <div className="space-y-2">
                                         {availableMembers.map(m => (
                                             <button key={m.id} onClick={async () => { await handleAddMember(m.id); setShowMemberModal(false); }}
-                                                className="w-full flex items-center gap-3 p-3 rounded-xl border border-border hover:border-primary/30 hover:bg-primary/5 transition-all">
+                                                className="w-full flex items-center gap-3 p-3 rounded-lg border border-border hover:border-primary/30 hover:bg-primary/5 transition-all">
                                                 <Avatar className="h-9 w-9"><AvatarImage src={m.avatarUrl} /><AvatarFallback>{getInitials(m.name)}</AvatarFallback></Avatar>
                                                 <div className="flex-1 text-left"><p className="text-sm font-medium">{m.name}</p><p className="text-xs text-muted-foreground">{m.role}</p></div>
                                                 <Plus className="h-4 w-4 text-muted-foreground" />
@@ -847,26 +965,50 @@ const Projects: React.FC = () => {
                         <Card className="p-5 space-y-4">
                             <div className="flex items-center justify-between">
                                 <h3 className="font-medium flex items-center gap-2"><FolderOpen className="h-4 w-4" /> Drive projet</h3>
-                                <Button size="sm" onClick={() => setShowDocModal(true)} className="h-8 gap-1.5"><Upload className="h-3.5 w-3.5" /> Ajouter</Button>
+                                <div className="flex items-center gap-2">
+                                    <a href={googleDriveService.getSharedFolderUrl()} target="_blank" rel="noreferrer"
+                                        className="text-xs text-muted-foreground hover:text-foreground transition-colors flex items-center gap-1">
+                                        <ExternalLink className="h-3 w-3" /> Ouvrir Drive
+                                    </a>
+                                    <Button size="sm" variant="outline" onClick={handleBrowseDrive} className="h-8 gap-1.5"><Search className="h-3.5 w-3.5" /> Parcourir</Button>
+                                    <Button size="sm" onClick={handleFileUploadClick} disabled={uploading} className="h-8 gap-1.5">
+                                        {uploading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Upload className="h-3.5 w-3.5" />} Upload
+                                    </Button>
+                                    <input ref={fileInputRef} type="file" multiple className="hidden" onChange={handleFileInputChange} />
+                                </div>
                             </div>
-                            {(p.documents || []).length === 0 ? (
-                                <button onClick={() => setShowDocModal(true)}
-                                    className="w-full py-10 border-2 border-dashed border-border rounded-xl text-sm text-muted-foreground hover:border-primary hover:text-primary transition-all flex flex-col items-center gap-3">
+                            {uploading && (
+                                <div className="flex items-center gap-2 p-3 rounded-lg bg-primary/5 border border-primary/10 text-sm">
+                                    <Loader2 className="h-4 w-4 animate-spin text-primary" />
+                                    <span className="text-primary font-medium">Upload en cours sur Google Drive...</span>
+                                </div>
+                            )}
+                            {(p.documents || []).length === 0 && !uploading ? (
+                                <button onClick={handleFileUploadClick}
+                                    className="w-full py-10 border-2 border-dashed border-border rounded-lg text-sm text-muted-foreground hover:border-primary hover:text-primary transition-all flex flex-col items-center gap-3">
                                     <FileUp className="h-10 w-10" />
-                                    <div className="text-center"><p className="font-medium">Glissez-déposez vos fichiers ici</p><p className="text-xs mt-1">ou cliquez pour ajouter un lien</p></div>
+                                    <div className="text-center">
+                                        <p className="font-medium">Glissez-déposez vos fichiers ici</p>
+                                        <p className="text-xs mt-1">Upload automatique vers Google Drive partage</p>
+                                    </div>
                                 </button>
                             ) : (
                                 <div className="space-y-2">
                                     {(p.documents || []).map(doc => {
                                         const docCfg = DOC_TYPE_CONFIG[doc.type] || DOC_TYPE_CONFIG.other;
+                                        const isDriveLink = doc.url?.includes('drive.google.com') || doc.url?.includes('docs.google.com');
                                         return (
-                                            <div key={doc.id} className="flex items-center gap-3 p-3 rounded-xl border border-border hover:border-primary/20 hover:shadow-sm transition-all group">
+                                            <div key={doc.id} className="flex items-center gap-3 p-3 rounded-lg border border-border hover:border-primary/20 hover:shadow-sm transition-all group cursor-pointer"
+                                                onClick={() => doc.url && !doc.url.startsWith('file://') && window.open(doc.url, '_blank')}>
                                                 <div className={cn("h-10 w-10 rounded-lg flex items-center justify-center text-lg shrink-0", docCfg.bg)}>{docCfg.icon}</div>
                                                 <div className="flex-1 min-w-0">
                                                     <p className="text-sm font-medium truncate">{doc.name}</p>
-                                                    <p className="text-xs text-muted-foreground">{doc.addedByName} · {doc.createdAt ? formatRelativeTime(doc.createdAt) : ''}</p>
+                                                    <p className="text-xs text-muted-foreground">
+                                                        {doc.addedByName} · {doc.createdAt ? formatRelativeTime(doc.createdAt) : ''}
+                                                        {isDriveLink && <span className="ml-1.5 text-muted-foreground">Drive</span>}
+                                                    </p>
                                                 </div>
-                                                <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-all">
+                                                <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-all" onClick={e => e.stopPropagation()}>
                                                     {doc.url && !doc.url.startsWith('file://') && (
                                                         <a href={doc.url} target="_blank" rel="noreferrer" className="p-1.5 rounded-lg hover:bg-muted transition-colors"><ExternalLink className="h-3.5 w-3.5 text-muted-foreground" /></a>
                                                     )}
@@ -877,7 +1019,7 @@ const Projects: React.FC = () => {
                                         );
                                     })}
                                     <div className="flex items-center justify-center py-2 text-xs text-muted-foreground/40 gap-1.5">
-                                        <FileUp className="h-3.5 w-3.5" /> Glissez-déposez des fichiers pour les ajouter
+                                        <FileUp className="h-3.5 w-3.5" /> Glissez-deposez des fichiers pour les uploader sur Drive
                                     </div>
                                 </div>
                             )}
@@ -909,7 +1051,7 @@ const Projects: React.FC = () => {
                         {projectTasks.length === 0 ? (
                             <button
                                 onClick={() => openTaskModal(p.companyId, p.id)}
-                                className="w-full py-6 border-2 border-dashed border-border rounded-xl text-sm text-muted-foreground hover:border-primary hover:text-primary transition-all flex items-center justify-center gap-2"
+                                className="w-full py-6 border-2 border-dashed border-border rounded-lg text-sm text-muted-foreground hover:border-primary hover:text-primary transition-all flex items-center justify-center gap-2"
                             >
                                 <Plus className="h-4 w-4" /> Créer une première tâche
                             </button>
@@ -925,26 +1067,26 @@ const Projects: React.FC = () => {
                                             }}
                                             className={cn(
                                                 "h-4.5 w-4.5 rounded-full border-2 shrink-0 flex items-center justify-center transition-all",
-                                                t.status === 'completed' ? "bg-emerald-500 border-emerald-500 text-white" :
-                                                t.status === 'in_progress' ? "border-blue-500 bg-blue-500/10" : "border-muted-foreground/30 hover:border-primary"
+                                                t.status === 'completed' ? "bg-foreground border-foreground text-background" :
+                                                t.status === 'in_progress' ? "border-foreground/50 bg-foreground/10" : "border-muted-foreground/30 hover:border-primary"
                                             )}
                                             style={{ width: 18, height: 18 }}
                                         >
                                             {t.status === 'completed' && <Check className="h-2.5 w-2.5" />}
-                                            {t.status === 'in_progress' && <div className="h-1.5 w-1.5 rounded-full bg-blue-500" />}
+                                            {t.status === 'in_progress' && <div className="h-1.5 w-1.5 rounded-full bg-foreground/50" />}
                                         </button>
                                         <div className="flex-1 min-w-0">
                                             <p className={cn("text-sm truncate", t.status === 'completed' && "line-through text-muted-foreground")}>{t.title}</p>
                                             <div className="flex items-center gap-1.5 mt-0.5">
                                                 {t.dueDate && (
                                                     <span className={cn("text-[10px]",
-                                                        new Date(t.dueDate) < new Date() && t.status !== 'completed' ? "text-red-500 font-medium" : "text-muted-foreground"
+                                                        new Date(t.dueDate) < new Date() && t.status !== 'completed' ? "text-foreground font-medium" : "text-muted-foreground"
                                                     )}>
                                                         {new Date(t.dueDate).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' })}
                                                     </span>
                                                 )}
                                                 <div className={cn("h-1.5 w-1.5 rounded-full shrink-0",
-                                                    t.priority === 'high' ? "bg-red-500" : t.priority === 'medium' ? "bg-amber-500" : "bg-emerald-500"
+                                                    t.priority === 'high' ? "bg-foreground" : t.priority === 'medium' ? "bg-foreground/50" : "bg-foreground/30"
                                                 )} />
                                             </div>
                                         </div>
@@ -1059,12 +1201,12 @@ const Projects: React.FC = () => {
                     </Card>
                 </div>
 
-                {/* ── DOCUMENT MODAL ────────────────────────── */}
+                {/* ── DOCUMENT MODAL (lien manuel) ────────────────────────── */}
                 {showDocModal && (
                     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm" onClick={() => setShowDocModal(false)}>
-                        <div className="bg-background rounded-xl shadow-2xl w-full max-w-md p-6 space-y-4" onClick={e => e.stopPropagation()}>
+                        <div className="bg-background rounded-lg shadow-sm w-full max-w-md p-6 space-y-4" onClick={e => e.stopPropagation()}>
                             <div className="flex items-center justify-between">
-                                <h3 className="font-semibold flex items-center gap-2"><Upload className="h-4 w-4" /> Ajouter un document</h3>
+                                <h3 className="font-semibold flex items-center gap-2"><Link2 className="h-4 w-4" /> Lier un document</h3>
                                 <Button variant="ghost" size="icon" onClick={() => setShowDocModal(false)} className="h-8 w-8"><X className="h-4 w-4" /></Button>
                             </div>
                             <div className="space-y-3">
@@ -1073,7 +1215,7 @@ const Projects: React.FC = () => {
                                     <Input placeholder="Ex: Cahier des charges v2" value={docForm.name} onChange={e => setDocForm({ ...docForm, name: e.target.value })} />
                                 </div>
                                 <div>
-                                    <label className="text-xs font-medium text-muted-foreground mb-1.5 block">Lien / URL</label>
+                                    <label className="text-xs font-medium text-muted-foreground mb-1.5 block">Lien Google Drive</label>
                                     <Input placeholder="https://drive.google.com/..." value={docForm.url} onChange={e => setDocForm({ ...docForm, url: e.target.value })} />
                                 </div>
                                 <div>
@@ -1087,8 +1229,76 @@ const Projects: React.FC = () => {
                             <div className="flex gap-2 justify-end pt-2">
                                 <Button variant="outline" onClick={() => setShowDocModal(false)}>Annuler</Button>
                                 <Button onClick={handleAddDoc} disabled={!docForm.name || !docForm.url}>
-                                    <Upload className="h-3.5 w-3.5 mr-1.5" /> Ajouter
+                                    <Link2 className="h-3.5 w-3.5 mr-1.5" /> Lier
                                 </Button>
+                            </div>
+                        </div>
+                    </div>
+                )}
+
+                {/* ── DRIVE BROWSER MODAL ────────────────────────── */}
+                {showDriveBrowser && (
+                    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm" onClick={() => setShowDriveBrowser(false)}>
+                        <div className="bg-background rounded-lg shadow-sm w-full max-w-lg p-6 space-y-4 max-h-[80vh] flex flex-col" onClick={e => e.stopPropagation()}>
+                            <div className="flex items-center justify-between">
+                                <h3 className="font-semibold flex items-center gap-2"><FolderOpen className="h-4 w-4" /> Parcourir Google Drive</h3>
+                                <Button variant="ghost" size="icon" onClick={() => setShowDriveBrowser(false)} className="h-8 w-8"><X className="h-4 w-4" /></Button>
+                            </div>
+                            <div className="flex gap-2">
+                                <Input
+                                    placeholder="Rechercher un fichier..."
+                                    value={driveSearchQuery}
+                                    onChange={e => setDriveSearchQuery(e.target.value)}
+                                    onKeyDown={e => e.key === 'Enter' && loadDriveFiles(driveSearchQuery || undefined)}
+                                    className="flex-1"
+                                />
+                                <Button variant="outline" size="sm" onClick={() => loadDriveFiles(driveSearchQuery || undefined)} className="h-10">
+                                    <Search className="h-4 w-4" />
+                                </Button>
+                            </div>
+                            <div className="flex-1 overflow-y-auto space-y-1.5 min-h-[200px]">
+                                {loadingDrive ? (
+                                    <div className="flex items-center justify-center py-10">
+                                        <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+                                    </div>
+                                ) : driveFiles.length === 0 ? (
+                                    <div className="text-center py-10 text-sm text-muted-foreground">
+                                        {googleDriveService.isAuthenticated()
+                                            ? 'Aucun fichier trouve. Connectez-vous d\'abord a Gmail pour acceder au Drive.'
+                                            : 'Connectez-vous a Google (via Gmail) pour parcourir le Drive partage.'}
+                                    </div>
+                                ) : (
+                                    driveFiles.map(file => {
+                                        const type = googleDriveService.getFileType(file.mimeType);
+                                        const docCfg = DOC_TYPE_CONFIG[type] || DOC_TYPE_CONFIG.other;
+                                        return (
+                                            <button
+                                                key={file.id}
+                                                onClick={() => handleLinkDriveFile(file)}
+                                                className="w-full flex items-center gap-3 p-3 rounded-lg border border-border hover:border-primary/30 hover:bg-primary/5 transition-all text-left"
+                                            >
+                                                <div className={cn("h-9 w-9 rounded-lg flex items-center justify-center text-base shrink-0", docCfg.bg)}>{docCfg.icon}</div>
+                                                <div className="flex-1 min-w-0">
+                                                    <p className="text-sm font-medium truncate">{file.name}</p>
+                                                    <p className="text-xs text-muted-foreground">
+                                                        {file.modifiedTime ? new Date(file.modifiedTime).toLocaleDateString('fr-FR') : ''}
+                                                        {file.size ? ` · ${(parseInt(file.size) / 1024 / 1024).toFixed(1)} MB` : ''}
+                                                    </p>
+                                                </div>
+                                                <Plus className="h-4 w-4 text-muted-foreground" />
+                                            </button>
+                                        );
+                                    })
+                                )}
+                            </div>
+                            <div className="flex items-center justify-between pt-2 border-t">
+                                <Button variant="ghost" size="sm" onClick={() => { setShowDriveBrowser(false); setShowDocModal(true); }} className="text-xs gap-1.5">
+                                    <Link2 className="h-3.5 w-3.5" /> Ajouter un lien manuellement
+                                </Button>
+                                <a href={googleDriveService.getSharedFolderUrl()} target="_blank" rel="noreferrer"
+                                    className="text-xs text-muted-foreground hover:text-foreground flex items-center gap-1">
+                                    <ExternalLink className="h-3 w-3" /> Ouvrir Drive
+                                </a>
                             </div>
                         </div>
                     </div>
@@ -1117,9 +1327,9 @@ const Projects: React.FC = () => {
             <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                 {[
                     { label: 'Projets', value: projects.length, sub: `${activeCount} actif${activeCount > 1 ? 's' : ''}`, icon: FolderKanban, accent: 'text-primary bg-primary/10' },
-                    { label: 'En cours', value: activeCount, sub: `${projects.filter(p => p.status === 'planning').length} en planification`, icon: TrendingUp, accent: 'text-blue-600 bg-blue-500/10' },
-                    { label: 'Pipeline', value: `${(totalBudget / 1000).toFixed(0)}k€`, sub: `${projects.filter(p => p.stage === 'negotiation').length} en négo`, icon: DollarSign, accent: 'text-amber-600 bg-amber-500/10' },
-                    { label: 'Signé', value: `${(wonValue / 1000).toFixed(0)}k€`, sub: `${projects.filter(p => p.stage === 'closed_won').length} deal${projects.filter(p => p.stage === 'closed_won').length > 1 ? 's' : ''} won`, icon: Target, accent: 'text-emerald-600 bg-emerald-500/10' },
+                    { label: 'En cours', value: activeCount, sub: `${projects.filter(p => p.status === 'completed').length} terminé${projects.filter(p => p.status === 'completed').length > 1 ? 's' : ''} · ${projects.filter(p => p.status === 'planning').length} en planif.`, icon: TrendingUp, accent: 'text-foreground bg-foreground/5' },
+                    { label: 'Pipeline actif', value: `${(pipelineBudget / 1000).toFixed(0)}k€`, sub: `${projects.filter(p => p.stage === 'negotiation').length} en négo`, icon: DollarSign, accent: 'text-foreground bg-foreground/5' },
+                    { label: 'Signé', value: `${(wonValue / 1000).toFixed(0)}k€`, sub: `${projects.filter(p => p.stage === 'closed_won').length} deal${projects.filter(p => p.stage === 'closed_won').length > 1 ? 's' : ''} won`, icon: Target, accent: 'text-foreground bg-foreground/5' },
                 ].map(kpi => (
                     <Card key={kpi.label} className="p-4 hover:shadow-sm transition-shadow">
                         <div className="flex items-start justify-between mb-2">
@@ -1190,13 +1400,13 @@ const Projects: React.FC = () => {
                             <Card
                                 key={p.id}
                                 className={cn(
-                                    "group relative overflow-hidden hover:shadow-lg transition-all duration-200 cursor-pointer border-border/60",
+                                    "group relative overflow-hidden hover:shadow-sm transition-all duration-200 cursor-pointer border-border/60",
                                     p.status === 'completed' && "opacity-75"
                                 )}
                                 onClick={() => openProject(p.id)}
                             >
                                 {/* Top accent bar */}
-                                <div className={cn("h-1 w-full", stageIdx >= 3 ? "bg-emerald-400" : stageIdx >= 2 ? "bg-primary" : stageIdx >= 1 ? "bg-foreground/30" : "bg-muted-foreground/20")} />
+                                <div className={cn("h-1 w-full", stageIdx >= 3 ? "bg-foreground" : stageIdx >= 2 ? "bg-foreground/60" : stageIdx >= 1 ? "bg-foreground/30" : "bg-muted-foreground/20")} />
 
                                 <div className="p-5">
                                     {/* Header: Title + Status */}
@@ -1258,7 +1468,7 @@ const Projects: React.FC = () => {
                                                 <span className="text-xs font-bold tabular-nums">{(p.budget / 1000).toFixed(0)}k€</span>
                                             </div>
                                             <div className="h-1 bg-muted rounded-full overflow-hidden">
-                                                <div className={cn("h-full rounded-full transition-all duration-500", budgetPct > 90 ? "bg-red-400" : budgetPct > 70 ? "bg-amber-400" : "bg-emerald-400")} style={{ width: `${Math.min(budgetPct, 100)}%` }} />
+                                                <div className={cn("h-full rounded-full transition-all duration-500", budgetPct > 90 ? "bg-foreground" : budgetPct > 70 ? "bg-foreground/60" : "bg-foreground/40")} style={{ width: `${Math.min(budgetPct, 100)}%` }} />
                                             </div>
                                             <p className="text-[9px] text-muted-foreground/60 mt-0.5">{(p.spent / 1000).toFixed(0)}k€ dépensé ({budgetPct}%)</p>
                                         </div>
@@ -1269,7 +1479,7 @@ const Projects: React.FC = () => {
                                                 <span className="text-xs font-bold tabular-nums">{p.progress}%</span>
                                             </div>
                                             <div className="h-1 bg-muted rounded-full overflow-hidden">
-                                                <div className={cn("h-full rounded-full transition-all duration-500", p.progress >= 100 ? "bg-emerald-400" : "bg-primary/60")} style={{ width: `${p.progress}%` }} />
+                                                <div className={cn("h-full rounded-full transition-all duration-500", p.progress >= 100 ? "bg-foreground/40" : "bg-primary/60")} style={{ width: `${p.progress}%` }} />
                                             </div>
                                             <p className="text-[9px] text-muted-foreground/60 mt-0.5">Probabilité {p.probability}%</p>
                                         </div>
@@ -1299,7 +1509,7 @@ const Projects: React.FC = () => {
                                             {p.endDate && (
                                                 <span className={cn(
                                                     "text-[10px] flex items-center gap-1 px-1.5 py-0.5 rounded",
-                                                    isOverdue ? "text-red-500 bg-red-500/10 font-medium" : "text-muted-foreground"
+                                                    isOverdue ? "text-foreground bg-foreground/10 font-medium" : "text-muted-foreground"
                                                 )}>
                                                     <Clock className="h-3 w-3" />
                                                     {new Date(p.endDate).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' })}
@@ -1317,7 +1527,7 @@ const Projects: React.FC = () => {
             {/* ── CREATE PROJECT MODAL ──────────────────────── */}
             {showModal && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm" onClick={() => setShowModal(false)}>
-                    <div className="bg-background rounded-xl shadow-2xl w-full max-w-lg p-6 max-h-[90vh] overflow-y-auto space-y-5" onClick={e => e.stopPropagation()}>
+                    <div className="bg-background rounded-lg shadow-sm w-full max-w-lg p-6 max-h-[90vh] overflow-y-auto space-y-5" onClick={e => e.stopPropagation()}>
                         <div className="flex items-center justify-between">
                             <h3 className="text-lg font-semibold flex items-center gap-2">
                                 <div className="h-8 w-8 rounded-lg bg-primary/10 flex items-center justify-center">

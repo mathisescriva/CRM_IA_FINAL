@@ -43,16 +43,17 @@ interface Attachment {
     type: 'pdf' | 'doc' | 'sheet' | 'slide' | 'image' | 'other';
     url: string;
     size?: string;
+    file?: File; // Actual file data for real MIME attachments
 }
 
 // Color palette for avatars
 const AVATAR_COLORS = [
-    'bg-blue-100 text-blue-700',
-    'bg-emerald-100 text-emerald-700',
-    'bg-amber-100 text-amber-700',
-    'bg-rose-100 text-rose-700',
-    'bg-cyan-100 text-cyan-700',
-    'bg-orange-100 text-orange-700',
+    'bg-muted text-foreground',
+    'bg-foreground/5 text-foreground',
+    'bg-muted text-foreground',
+    'bg-foreground/5 text-foreground',
+    'bg-muted text-foreground',
+    'bg-foreground/5 text-foreground',
 ];
 
 const getAvatarColor = (name: string) => {
@@ -110,14 +111,21 @@ export const Inbox: React.FC = () => {
     
     // Create Contact Modal
     const [showCreateContact, setShowCreateContact] = useState(false);
-    const [newContactData, setNewContactData] = useState({ name: '', email: '' });
+    const [newContactData, setNewContactData] = useState({ name: '', email: '', emailBody: '' });
+    
+    // Gmail signature
+    const [gmailSignature, setGmailSignature] = useState('');
 
     useEffect(() => {
         const init = async () => {
             const loadedContacts = await loadCompaniesAndContacts();
             await gmailService.load();
             setIsAuthenticated(gmailService.isAuthenticated);
-            if (gmailService.isAuthenticated) loadMessages('', loadedContacts);
+            if (gmailService.isAuthenticated) {
+                loadMessages('', loadedContacts);
+                // Load Gmail signature
+                gmailService.getSignature().then(sig => setGmailSignature(sig));
+            }
             else setLoading(false);
         };
         init();
@@ -266,6 +274,19 @@ export const Inbox: React.FC = () => {
         }
     };
 
+    /** Convert a File to a base64 string (without the data: prefix) */
+    const fileToBase64 = (file: File): Promise<string> =>
+        new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = () => {
+                const result = reader.result as string;
+                // Remove "data:<mime>;base64," prefix
+                resolve(result.split(',')[1] || '');
+            };
+            reader.onerror = reject;
+            reader.readAsDataURL(file);
+        });
+
     const handleCompose = async (e: React.FormEvent) => {
         e.preventDefault();
         setIsSending(true);
@@ -274,25 +295,41 @@ export const Inbox: React.FC = () => {
             const recipients = selectedContactEmails.map(c => c.email).join(', ') + 
                              (composeForm.to ? (selectedContactEmails.length > 0 ? ', ' : '') + composeForm.to : '');
             
-            // Build email body with attachment links
+            // Prepare real file attachments for MIME
+            const fileAttachments: { name: string; mimeType: string; data: string }[] = [];
+            for (const att of attachments) {
+                if (att.file) {
+                    const base64Data = await fileToBase64(att.file);
+                    fileAttachments.push({
+                        name: att.file.name,
+                        mimeType: att.file.type || 'application/octet-stream',
+                        data: base64Data,
+                    });
+                }
+            }
+
+            // Only add URL-only attachments (no file data) as links in the body
+            const urlOnlyAttachments = attachments.filter(a => !a.file);
             let body = composeForm.body;
-            if (attachments.length > 0) {
+            if (urlOnlyAttachments.length > 0) {
                 body += '\n\n--- Pièces jointes ---\n';
-                attachments.forEach(att => {
+                urlOnlyAttachments.forEach(att => {
                     body += `📎 ${att.name}: ${att.url}\n`;
                 });
             }
             
-            await gmailService.sendEmail(recipients, composeForm.subject, body);
+            await gmailService.sendEmail(
+                recipients,
+                composeForm.subject,
+                body,
+                fileAttachments.length > 0 ? fileAttachments : undefined
+            );
             
-            // Add attachments to CRM company documents
+            // Add attachments to CRM company documents (Drive links for internal tracking)
             if (attachments.length > 0) {
                 const currentUser = authService.getCurrentUser();
-                
-                // Find all CRM contacts among recipients
                 const crmRecipients = selectedContactEmails.filter(c => c.companyId);
                 
-                // Add documents to each company
                 for (const recipient of crmRecipients) {
                     for (const att of attachments) {
                         await companyService.addDocument(recipient.companyId, {
@@ -350,12 +387,13 @@ export const Inbox: React.FC = () => {
         setSelectedContactEmails(selectedContactEmails.filter(c => c.email !== email));
     };
 
-    const addAttachment = (name: string, url: string) => {
+    const addAttachment = (name: string, url: string, file?: File) => {
         const newAtt: Attachment = {
             id: `att-${Date.now()}`,
             name,
             type: getFileType(name),
-            url
+            url,
+            file,
         };
         setAttachments([...attachments, newAtt]);
     };
@@ -415,16 +453,16 @@ export const Inbox: React.FC = () => {
                 {/* Header */}
                 <div className="flex items-center justify-between mb-5">
                     <div>
-                        <h1 className="text-2xl font-bold tracking-tight text-slate-900 dark:text-slate-100">
+                        <h1 className="text-2xl font-bold tracking-tight text-foreground">
                             Messages
                         </h1>
-                        <p className="text-sm text-slate-500">
+                        <p className="text-sm text-muted-foreground">
                             {stats.unread > 0 && (
-                                <span className="text-blue-600 font-medium">{stats.unread} non lu{stats.unread > 1 ? 's' : ''}</span>
+                                <span className="text-foreground font-medium">{stats.unread} non lu{stats.unread > 1 ? 's' : ''}</span>
                             )}
                             {stats.unread > 0 && stats.crm > 0 && ' • '}
                             {stats.crm > 0 && (
-                                <span className="text-emerald-600 font-medium">{stats.crm} contacts CRM</span>
+                                <span className="text-foreground font-medium">{stats.crm} contacts CRM</span>
                             )}
                             {stats.unread === 0 && stats.crm === 0 && 'Tout est à jour'}
                         </p>
@@ -435,13 +473,13 @@ export const Inbox: React.FC = () => {
                             size="icon"
                             onClick={handleRefresh}
                             disabled={isRefreshing}
-                            className="h-9 w-9 border-slate-200 dark:border-slate-800"
+                            className="h-9 w-9 border-border"
                         >
-                            <RefreshCw className={cn("h-4 w-4 text-slate-600", isRefreshing && "animate-spin")} />
+                            <RefreshCw className={cn("h-4 w-4 text-muted-foreground", isRefreshing && "animate-spin")} />
                         </Button>
                         <Button 
                             onClick={() => setShowCompose(true)} 
-                            className="gap-2 bg-slate-900 hover:bg-slate-800 dark:bg-slate-100 dark:text-slate-900 dark:hover:bg-slate-200"
+                            className="gap-2 bg-foreground text-background hover:bg-foreground/90"
                         >
                             <PenSquare className="h-4 w-4" />
                             Nouveau
@@ -451,23 +489,23 @@ export const Inbox: React.FC = () => {
 
                 {/* Search */}
                 <form onSubmit={handleSearch} className="relative mb-4">
-                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                     <Input
                         type="text"
                         value={searchQuery}
                         onChange={e => setSearchQuery(e.target.value)}
                         placeholder="Rechercher..."
-                        className="pl-10 bg-slate-50 dark:bg-slate-900 border-slate-200 dark:border-slate-800 focus:bg-white dark:focus:bg-slate-950"
+                        className="pl-10 bg-muted border-border focus:bg-background"
                     />
                 </form>
 
                 {/* Category Pills */}
                 <div className="flex items-center gap-2 mb-4 overflow-x-auto pb-1">
                     {[
-                        { id: 'all', label: 'Tous', count: stats.total, color: 'slate' },
-                        { id: 'unread', label: 'Non lus', count: stats.unread, color: 'blue' },
-                        { id: 'starred', label: 'Favoris', count: stats.starred, color: 'amber' },
-                        { id: 'crm', label: 'CRM', count: stats.crm, color: 'emerald' },
+                        { id: 'all', label: 'Tous', count: stats.total },
+                        { id: 'unread', label: 'Non lus', count: stats.unread },
+                        { id: 'starred', label: 'Favoris', count: stats.starred },
+                        { id: 'crm', label: 'CRM', count: stats.crm },
                     ].map(cat => (
                         <button
                             key={cat.id}
@@ -475,11 +513,8 @@ export const Inbox: React.FC = () => {
                             className={cn(
                                 "flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm font-medium whitespace-nowrap transition-all",
                                 currentCategory === cat.id
-                                    ? cat.color === 'slate' ? "bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-900"
-                                    : cat.color === 'blue' ? "bg-blue-600 text-white"
-                                    : cat.color === 'amber' ? "bg-amber-500 text-white"
-                                    : "bg-emerald-600 text-white"
-                                    : "bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700"
+                                    ? "bg-foreground text-background"
+                                    : "bg-muted text-muted-foreground hover:bg-muted/80"
                             )}
                         >
                             {cat.label}
@@ -487,8 +522,8 @@ export const Inbox: React.FC = () => {
                                 <span className={cn(
                                     "text-xs px-1.5 py-0.5 rounded-full min-w-[20px] text-center",
                                     currentCategory === cat.id
-                                        ? "bg-white/20"
-                                        : "bg-slate-200 dark:bg-slate-700"
+                                        ? "bg-background/20"
+                                        : "bg-foreground/5"
                                 )}>
                                     {cat.count}
                                 </span>
@@ -498,7 +533,7 @@ export const Inbox: React.FC = () => {
                 </div>
 
                 {/* Folder Tabs */}
-                <div className="flex items-center border-b border-slate-200 dark:border-slate-800 mb-4">
+                <div className="flex items-center border-b border-border mb-4">
                     {[
                         { id: 'INBOX', label: 'Boîte de réception', icon: InboxIcon },
                         { id: 'SENT', label: 'Envoyés', icon: Send },
@@ -510,8 +545,8 @@ export const Inbox: React.FC = () => {
                             className={cn(
                                 "flex items-center gap-2 px-4 py-2.5 text-sm font-medium border-b-2 -mb-[2px] transition-all",
                                 currentFolder === folder.id
-                                    ? "border-slate-900 dark:border-slate-100 text-slate-900 dark:text-slate-100"
-                                    : "border-transparent text-slate-500 hover:text-slate-700 dark:hover:text-slate-300"
+                                    ? "border-foreground text-foreground"
+                                    : "border-transparent text-muted-foreground hover:text-foreground"
                             )}
                         >
                             <folder.icon className="h-4 w-4" />
@@ -521,31 +556,31 @@ export const Inbox: React.FC = () => {
                 </div>
 
                 {/* Messages List */}
-                <div className="flex-1 overflow-hidden rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950">
+                <div className="flex-1 overflow-hidden rounded-lg border border-border bg-background">
                     <ScrollArea className="h-full">
                         {!isAuthenticated ? (
                             <div className="flex flex-col items-center justify-center h-full p-8 text-center">
-                                <div className="h-16 w-16 rounded-2xl bg-gradient-to-br from-blue-500 to-cyan-500 flex items-center justify-center mb-4 shadow-lg shadow-blue-500/20">
-                                    <Mail className="h-8 w-8 text-white" />
+                                <div className="h-16 w-16 rounded-lg bg-foreground flex items-center justify-center mb-4">
+                                    <Mail className="h-8 w-8 text-background" />
                                 </div>
-                                <h3 className="font-semibold text-slate-900 dark:text-slate-100 mb-2">Connectez Gmail</h3>
-                                <p className="text-sm text-slate-500 mb-4">
+                                <h3 className="font-semibold text-foreground mb-2">Connectez Gmail</h3>
+                                <p className="text-sm text-muted-foreground mb-4">
                                     Synchronisez vos emails pour une gestion centralisée
                                 </p>
-                                <Button onClick={handleLogin} className="bg-blue-600 hover:bg-blue-700">
+                                <Button onClick={handleLogin} className="bg-foreground text-background hover:bg-foreground/90">
                                     <Zap className="h-4 w-4" />
                                     Se connecter
                                 </Button>
                             </div>
                         ) : loading ? (
                             <div className="flex flex-col items-center justify-center h-64 gap-3">
-                                <Loader2 className="h-8 w-8 animate-spin text-blue-600" />
-                                <p className="text-sm text-slate-500">Synchronisation...</p>
+                                <Loader2 className="h-8 w-8 animate-spin text-foreground" />
+                                <p className="text-sm text-muted-foreground">Synchronisation...</p>
                             </div>
                         ) : filteredMessages.length === 0 ? (
                             <div className="flex flex-col items-center justify-center h-64 text-center p-8">
-                                <MessageSquare className="h-12 w-12 text-slate-300 dark:text-slate-700 mb-3" />
-                                <p className="text-sm text-slate-500">Aucun message</p>
+                                <MessageSquare className="h-12 w-12 text-muted-foreground/50 mb-3" />
+                                <p className="text-sm text-muted-foreground">Aucun message</p>
                             </div>
                         ) : (
                             <div>
@@ -568,7 +603,7 @@ export const Inbox: React.FC = () => {
 
             {/* Right Panel - Conversation */}
             <div className={cn(
-                "flex-1 flex flex-col overflow-hidden rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950",
+                "flex-1 flex flex-col overflow-hidden rounded-lg border border-border bg-background",
                 selectedMessage ? "flex" : "hidden lg:flex"
             )}>
                 {selectedMessage ? (
@@ -577,30 +612,32 @@ export const Inbox: React.FC = () => {
                         onBack={() => setSelectedMessage(null)}
                         onAction={handleAction}
                         onReply={() => {
+                            const body = extractEmailBody(selectedMessage);
+                            const originalText = body.text || selectedMessage.snippet;
                             setComposeForm({
                                 to: getHeader(selectedMessage, 'From'),
                                 subject: `Re: ${getHeader(selectedMessage, 'Subject')}`,
-                                body: '\n\n--- Message Original ---\n' + selectedMessage.snippet
+                                body: '\n\n--- Message Original ---\n' + originalText
                             });
                             setShowCompose(true);
                         }}
                         onNavigateToCompany={(id) => navigate(`/company/${id}`)}
-                        onCreateContact={(name, email) => {
-                            setNewContactData({ name, email });
+                        onCreateContact={(name, email, body) => {
+                            setNewContactData({ name, email, emailBody: body || '' });
                             setShowCreateContact(true);
                         }}
                         getHeader={getHeader}
                         formatDate={formatDate}
                     />
                 ) : (
-                    <div className="flex-1 flex flex-col items-center justify-center text-center p-12 bg-slate-50/50 dark:bg-slate-900/50">
-                        <div className="h-20 w-20 rounded-2xl bg-slate-100 dark:bg-slate-800 flex items-center justify-center mb-6">
-                            <Mail className="h-10 w-10 text-slate-400" />
+                    <div className="flex-1 flex flex-col items-center justify-center text-center p-12 bg-muted/50">
+                        <div className="h-20 w-20 rounded-lg bg-muted flex items-center justify-center mb-6">
+                            <Mail className="h-10 w-10 text-muted-foreground" />
                         </div>
-                        <h3 className="text-lg font-semibold text-slate-900 dark:text-slate-100 mb-2">
+                        <h3 className="text-lg font-semibold text-foreground mb-2">
                             Sélectionnez une conversation
                         </h3>
-                        <p className="text-sm text-slate-500 max-w-sm">
+                        <p className="text-sm text-muted-foreground max-w-sm">
                             Choisissez un email pour voir son contenu et les informations CRM associées
                         </p>
                     </div>
@@ -640,6 +677,7 @@ export const Inbox: React.FC = () => {
                         setShowContactSuggestions(true);
                     }}
                     onBlurContacts={() => setTimeout(() => setShowContactSuggestions(false), 200)}
+                    signature={gmailSignature}
                 />
             )}
             
@@ -648,16 +686,17 @@ export const Inbox: React.FC = () => {
                 <CreateContactModal
                     initialName={newContactData.name}
                     initialEmail={newContactData.email}
+                    initialEmailBody={newContactData.emailBody}
                     companies={companies}
                     onClose={() => {
                         setShowCreateContact(false);
-                        setNewContactData({ name: '', email: '' });
+                        setNewContactData({ name: '', email: '', emailBody: '' });
                     }}
                     onCreated={async () => {
                         await loadCompaniesAndContacts();
                         await loadMessages();
                         setShowCreateContact(false);
-                        setNewContactData({ name: '', email: '' });
+                        setNewContactData({ name: '', email: '', emailBody: '' });
                     }}
                 />
             )}
@@ -665,19 +704,130 @@ export const Inbox: React.FC = () => {
     );
 };
 
+/**
+ * Extract job title and phone from an email signature.
+ * Signatures typically appear at the end of an email, after "--" or similar separators.
+ */
+function extractFromSignature(body: string, senderName: string): { role: string; phone: string; company: string } {
+    let role = '';
+    let phone = '';
+    let company = '';
+
+    if (!body || !body.trim()) return { role, phone, company };
+
+    // Normalize: strip HTML tags if present
+    const text = body.replace(/<br\s*\/?>/gi, '\n').replace(/<[^>]+>/g, ' ').replace(/&nbsp;/g, ' ');
+
+    // Try to find signature block (after -- or at the end of the email)
+    const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
+
+    // Find the signature start: look for "--", "—", or the sender's name near the end
+    let sigStartIdx = -1;
+    const nameWords = senderName.replace(/"/g, '').trim().toLowerCase().split(/\s+/);
+    const lastName = nameWords[nameWords.length - 1];
+    const firstName = nameWords[0];
+
+    for (let i = lines.length - 1; i >= Math.max(0, lines.length - 30); i--) {
+        const line = lines[i];
+        // Classic signature separator
+        if (/^[-–—]{2,}$/.test(line.replace(/\s/g, ''))) {
+            sigStartIdx = i + 1;
+            break;
+        }
+        // Sender name appearing in the last portion (common for signatures)
+        if (lastName && firstName && line.toLowerCase().includes(lastName) && line.toLowerCase().includes(firstName) && i > lines.length - 20) {
+            sigStartIdx = i;
+            break;
+        }
+    }
+
+    // If no explicit separator found, take last 15 lines as potential signature
+    if (sigStartIdx === -1) sigStartIdx = Math.max(0, lines.length - 15);
+    const sigLines = lines.slice(sigStartIdx);
+    const sigText = sigLines.join('\n');
+
+    // ── Extract phone ──
+    // Match international formats: +33, 06, 07, etc.
+    const phoneRegex = /(?:(?:\+|00)\s*\d{1,3}[\s.-]?)?(?:\(?\d{1,4}\)?[\s.-]?){2,5}\d{2,4}/g;
+    const phoneMatches = sigText.match(phoneRegex);
+    if (phoneMatches) {
+        for (const m of phoneMatches) {
+            const digits = m.replace(/\D/g, '');
+            // Valid phone: 10+ digits or starts with + and 8+ digits
+            if (digits.length >= 10 || (m.includes('+') && digits.length >= 8)) {
+                phone = m.trim();
+                break;
+            }
+        }
+    }
+
+    // ── Extract job title / role ──
+    // Common job title keywords (French + English)
+    const titleKeywords = /directeur|directrice|responsable|manager|president|présidente|fondateur|fondatrice|associé|associée|gérant|gérante|consultant|consultante|ingénieur|ingénieure|chef de|head of|ceo|cto|cfo|coo|cmo|vp |vice.?president|partner|co-?founder|développeur|développeuse|chargé|chargée|coordinat|commercial|business develop|account|sales|marketing|communication|rh |drh|resources? humaines|avocat|counsel|juriste|notaire|architecte|designer|analyste|analyst|officer|lead |tech lead|product|projet|project/i;
+
+    for (const line of sigLines) {
+        // Skip lines that are just the name, email, URL, or phone
+        if (line.toLowerCase().includes(lastName) && line.toLowerCase().includes(firstName) && line.length < 40) continue;
+        if (/@/.test(line) || /^http/i.test(line) || /^www\./i.test(line)) continue;
+        if (line === phone) continue;
+        // Skip lines that are mostly numbers (phone-only lines)
+        if (line.replace(/[\d\s+\-().]/g, '').length < 3) continue;
+
+        if (titleKeywords.test(line)) {
+            // Clean the line: remove phone numbers, emails, URLs
+            let cleaned = line
+                .replace(/(?:(?:\+|00)\s*\d{1,3}[\s.-]?)?\(?\d{2,4}\)?[\s.-]?\d{2,4}[\s.-]?\d{2,4}[\s.-]?\d{0,4}/g, '')
+                .replace(/\S+@\S+/g, '')
+                .replace(/https?:\/\/\S+/g, '')
+                .replace(/[|·•\-–—]/g, ' ')
+                .replace(/\s{2,}/g, ' ')
+                .trim();
+            // Take only the relevant portion (max ~60 chars)
+            if (cleaned.length > 2 && cleaned.length < 80) {
+                role = cleaned;
+                break;
+            }
+        }
+    }
+
+    // If no role found via keywords, look for a line right after the sender's name
+    if (!role) {
+        for (let i = 0; i < sigLines.length - 1; i++) {
+            const line = sigLines[i].toLowerCase();
+            if (lastName && firstName && line.includes(lastName) && line.includes(firstName)) {
+                // The next non-empty line after the name is often the title
+                const nextLine = sigLines[i + 1];
+                if (nextLine && !/@/.test(nextLine) && !/^http/i.test(nextLine) && nextLine.replace(/[\d\s+\-().]/g, '').length > 3 && nextLine.length < 60) {
+                    role = nextLine.replace(/[|·•\-–—]/g, ' ').replace(/\s{2,}/g, ' ').trim();
+                    break;
+                }
+            }
+        }
+    }
+
+    // ── Extract company name (line after name or near title) ──
+    // This is harder; skip for now since user picks from existing companies
+
+    return { role, phone, company };
+}
+
 // Create Contact Modal Component
 const CreateContactModal: React.FC<{
     initialName: string;
     initialEmail: string;
+    initialEmailBody?: string;
     companies: Company[];
     onClose: () => void;
     onCreated: () => void;
-}> = ({ initialName, initialEmail, companies, onClose, onCreated }) => {
+}> = ({ initialName, initialEmail, initialEmailBody, companies, onClose, onCreated }) => {
+    // Extract role & phone from email signature
+    const extracted = extractFromSignature(initialEmailBody || '', initialName);
+
     const [form, setForm] = useState({
         name: initialName,
         email: initialEmail,
-        role: '',
-        phone: '',
+        role: extracted.role,
+        phone: extracted.phone,
         companyId: '',
         newCompanyName: '',
         entityType: 'client' as 'client' | 'partner'
@@ -735,18 +885,27 @@ const CreateContactModal: React.FC<{
         }
     };
 
+    const [companySearch, setCompanySearch] = useState('');
+
+    const filteredClients = companySearch.trim()
+        ? clients.filter(c => c.name.toLowerCase().includes(companySearch.toLowerCase()))
+        : clients;
+    const filteredPartners = companySearch.trim()
+        ? partners.filter(c => c.name.toLowerCase().includes(companySearch.toLowerCase()))
+        : partners;
+
     return (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4">
-            <div className="w-full max-w-lg bg-white dark:bg-slate-950 rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-800 overflow-hidden">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-foreground/60 backdrop-blur-sm p-4">
+            <div className="w-full max-w-lg max-h-[90vh] flex flex-col bg-background rounded-lg shadow-sm border border-border overflow-hidden">
                 {/* Header */}
-                <div className="px-6 py-4 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between">
+                <div className="px-6 py-4 border-b border-border flex items-center justify-between flex-shrink-0">
                     <div className="flex items-center gap-3">
-                        <div className="h-10 w-10 rounded-xl bg-amber-500 flex items-center justify-center">
-                            <UserPlus className="h-5 w-5 text-white" />
+                        <div className="h-10 w-10 rounded-lg bg-foreground flex items-center justify-center">
+                            <UserPlus className="h-5 w-5 text-background" />
                         </div>
                         <div>
-                            <h3 className="font-semibold text-slate-900 dark:text-slate-100">Créer un contact</h3>
-                            <p className="text-sm text-slate-500">Ajoutez ce contact à votre CRM</p>
+                            <h3 className="font-semibold text-foreground">Créer un contact</h3>
+                            <p className="text-sm text-muted-foreground">Ajoutez ce contact à votre CRM</p>
                         </div>
                     </div>
                     <Button variant="ghost" size="icon" onClick={onClose}>
@@ -754,9 +913,10 @@ const CreateContactModal: React.FC<{
                     </Button>
                 </div>
 
-                <form onSubmit={handleSubmit} className="p-6 space-y-5">
+                <form onSubmit={handleSubmit} className="flex flex-col flex-1 min-h-0">
+                <div className="p-6 space-y-5 overflow-y-auto flex-1">
                     {error && (
-                        <div className="p-3 rounded-lg bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-800 text-sm text-red-600 dark:text-red-400">
+                        <div className="p-3 rounded-lg bg-destructive/10 border border-destructive/20 text-sm text-destructive">
                             {error}
                         </div>
                     )}
@@ -764,7 +924,7 @@ const CreateContactModal: React.FC<{
                     {/* Contact Info */}
                     <div className="grid grid-cols-2 gap-4">
                         <div className="col-span-2">
-                            <Label className="text-slate-700 dark:text-slate-300">Nom complet *</Label>
+                            <Label className="text-foreground">Nom complet *</Label>
                             <Input
                                 value={form.name}
                                 onChange={e => setForm({ ...form, name: e.target.value })}
@@ -773,7 +933,7 @@ const CreateContactModal: React.FC<{
                             />
                         </div>
                         <div>
-                            <Label className="text-slate-700 dark:text-slate-300">Email *</Label>
+                            <Label className="text-foreground">Email *</Label>
                             <Input
                                 type="email"
                                 value={form.email}
@@ -783,7 +943,7 @@ const CreateContactModal: React.FC<{
                             />
                         </div>
                         <div>
-                            <Label className="text-slate-700 dark:text-slate-300">Téléphone</Label>
+                            <Label className="text-foreground">Téléphone</Label>
                             <Input
                                 value={form.phone}
                                 onChange={e => setForm({ ...form, phone: e.target.value })}
@@ -792,7 +952,7 @@ const CreateContactModal: React.FC<{
                             />
                         </div>
                         <div className="col-span-2">
-                            <Label className="text-slate-700 dark:text-slate-300">Fonction</Label>
+                            <Label className="text-foreground">Fonction</Label>
                             <Input
                                 value={form.role}
                                 onChange={e => setForm({ ...form, role: e.target.value })}
@@ -803,9 +963,9 @@ const CreateContactModal: React.FC<{
                     </div>
 
                     {/* Separator */}
-                    <div className="border-t border-slate-200 dark:border-slate-800 pt-5">
+                    <div className="border-t border-border pt-5">
                         <div className="flex items-center justify-between mb-4">
-                            <Label className="text-slate-700 dark:text-slate-300 flex items-center gap-2">
+                            <Label className="text-foreground flex items-center gap-2">
                                 <Building2 className="h-4 w-4" />
                                 Entreprise associée *
                             </Label>
@@ -831,7 +991,7 @@ const CreateContactModal: React.FC<{
                         {isCreatingNewCompany ? (
                             <div className="space-y-4">
                                 <div>
-                                    <Label className="text-slate-600 dark:text-slate-400 text-sm">Nom de l'entreprise</Label>
+                                    <Label className="text-muted-foreground text-sm">Nom de l'entreprise</Label>
                                     <Input
                                         value={form.newCompanyName}
                                         onChange={e => setForm({ ...form, newCompanyName: e.target.value })}
@@ -840,7 +1000,7 @@ const CreateContactModal: React.FC<{
                                     />
                                 </div>
                                 <div>
-                                    <Label className="text-slate-600 dark:text-slate-400 text-sm">Type d'entité</Label>
+                                    <Label className="text-muted-foreground text-sm">Type d'entité</Label>
                                     <div className="flex gap-2 mt-2">
                                         <Button
                                             type="button"
@@ -849,7 +1009,7 @@ const CreateContactModal: React.FC<{
                                             onClick={() => setForm({ ...form, entityType: 'client' })}
                                             className={cn(
                                                 "flex-1 gap-2",
-                                                form.entityType === 'client' && "bg-blue-600 hover:bg-blue-700"
+                                                form.entityType === 'client' && "bg-foreground text-background hover:bg-foreground/90"
                                             )}
                                         >
                                             <Users className="h-4 w-4" />
@@ -862,7 +1022,7 @@ const CreateContactModal: React.FC<{
                                             onClick={() => setForm({ ...form, entityType: 'partner' })}
                                             className={cn(
                                                 "flex-1 gap-2",
-                                                form.entityType === 'partner' && "bg-purple-600 hover:bg-purple-700"
+                                                form.entityType === 'partner' && "bg-foreground text-background hover:bg-foreground/90"
                                             )}
                                         >
                                             <Handshake className="h-4 w-4" />
@@ -873,33 +1033,44 @@ const CreateContactModal: React.FC<{
                             </div>
                         ) : (
                             <div className="space-y-3">
+                                {/* Search */}
+                                <div className="relative">
+                                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                                    <Input
+                                        value={companySearch}
+                                        onChange={e => setCompanySearch(e.target.value)}
+                                        placeholder="Rechercher une entreprise..."
+                                        className="pl-9"
+                                    />
+                                </div>
+
                                 {/* Clients */}
-                                {clients.length > 0 && (
+                                {filteredClients.length > 0 && (
                                     <div>
-                                        <p className="text-xs font-medium text-blue-600 dark:text-blue-400 mb-2 flex items-center gap-1">
+                                        <p className="text-xs font-medium text-foreground mb-2 flex items-center gap-1">
                                             <Users className="h-3 w-3" /> Clients
                                         </p>
                                         <div className="grid grid-cols-2 gap-2">
-                                            {clients.map(company => (
+                                            {filteredClients.map(company => (
                                                 <button
                                                     key={company.id}
                                                     type="button"
                                                     onClick={() => setForm({ ...form, companyId: company.id })}
                                                     className={cn(
-                                                        "p-3 rounded-lg border text-left transition-all flex items-center gap-3",
+                                                        "p-2.5 rounded-lg border text-left transition-all flex items-center gap-2.5",
                                                         form.companyId === company.id
-                                                            ? "border-blue-500 bg-blue-50 dark:bg-blue-950/30"
-                                                            : "border-slate-200 dark:border-slate-700 hover:border-slate-300"
+                                                            ? "border-foreground bg-foreground/5"
+                                                            : "border-border hover:border-foreground/30"
                                                     )}
                                                 >
                                                     {company.logoUrl ? (
-                                                        <img src={company.logoUrl} alt="" className="h-8 w-8 rounded object-contain bg-white" />
+                                                        <img src={company.logoUrl} alt="" className="h-7 w-7 rounded object-contain bg-background flex-shrink-0" />
                                                     ) : (
-                                                        <div className="h-8 w-8 rounded bg-slate-100 dark:bg-slate-800 flex items-center justify-center">
-                                                            <Building2 className="h-4 w-4 text-slate-400" />
+                                                        <div className="h-7 w-7 rounded bg-muted flex items-center justify-center flex-shrink-0">
+                                                            <Building2 className="h-3.5 w-3.5 text-muted-foreground" />
                                                         </div>
                                                     )}
-                                                    <span className="text-sm font-medium text-slate-700 dark:text-slate-300 truncate">
+                                                    <span className="text-sm font-medium text-foreground truncate">
                                                         {company.name}
                                                     </span>
                                                 </button>
@@ -909,32 +1080,32 @@ const CreateContactModal: React.FC<{
                                 )}
                                 
                                 {/* Partners */}
-                                {partners.length > 0 && (
+                                {filteredPartners.length > 0 && (
                                     <div>
-                                        <p className="text-xs font-medium text-purple-600 dark:text-purple-400 mb-2 flex items-center gap-1">
+                                        <p className="text-xs font-medium text-foreground mb-2 flex items-center gap-1">
                                             <Handshake className="h-3 w-3" /> Partenaires
                                         </p>
                                         <div className="grid grid-cols-2 gap-2">
-                                            {partners.map(company => (
+                                            {filteredPartners.map(company => (
                                                 <button
                                                     key={company.id}
                                                     type="button"
                                                     onClick={() => setForm({ ...form, companyId: company.id })}
                                                     className={cn(
-                                                        "p-3 rounded-lg border text-left transition-all flex items-center gap-3",
+                                                        "p-2.5 rounded-lg border text-left transition-all flex items-center gap-2.5",
                                                         form.companyId === company.id
-                                                            ? "border-purple-500 bg-purple-50 dark:bg-purple-950/30"
-                                                            : "border-slate-200 dark:border-slate-700 hover:border-slate-300"
+                                                            ? "border-foreground bg-foreground/5"
+                                                            : "border-border hover:border-foreground/30"
                                                     )}
                                                 >
                                                     {company.logoUrl ? (
-                                                        <img src={company.logoUrl} alt="" className="h-8 w-8 rounded object-contain bg-white" />
+                                                        <img src={company.logoUrl} alt="" className="h-7 w-7 rounded object-contain bg-background flex-shrink-0" />
                                                     ) : (
-                                                        <div className="h-8 w-8 rounded bg-slate-100 dark:bg-slate-800 flex items-center justify-center">
-                                                            <Handshake className="h-4 w-4 text-slate-400" />
+                                                        <div className="h-7 w-7 rounded bg-muted flex items-center justify-center flex-shrink-0">
+                                                            <Handshake className="h-3.5 w-3.5 text-muted-foreground" />
                                                         </div>
                                                     )}
-                                                    <span className="text-sm font-medium text-slate-700 dark:text-slate-300 truncate">
+                                                    <span className="text-sm font-medium text-foreground truncate">
                                                         {company.name}
                                                     </span>
                                                 </button>
@@ -942,19 +1113,24 @@ const CreateContactModal: React.FC<{
                                         </div>
                                     </div>
                                 )}
+
+                                {filteredClients.length === 0 && filteredPartners.length === 0 && companySearch.trim() && (
+                                    <p className="text-sm text-muted-foreground text-center py-3">Aucune entreprise trouvée pour "{companySearch}"</p>
+                                )}
                             </div>
                         )}
                     </div>
+                </div>
 
-                    {/* Actions */}
-                    <div className="flex justify-end gap-3 pt-4 border-t border-slate-200 dark:border-slate-800">
+                    {/* Actions — sticky footer */}
+                    <div className="flex justify-end gap-3 px-6 py-4 border-t border-border bg-background flex-shrink-0">
                         <Button type="button" variant="outline" onClick={onClose}>
                             Annuler
                         </Button>
                         <Button 
                             type="submit" 
                             disabled={isSaving}
-                            className="bg-amber-600 hover:bg-amber-700 text-white gap-2"
+                            className="bg-foreground hover:bg-foreground/90 text-background gap-2"
                         >
                             {isSaving ? (
                                 <Loader2 className="h-4 w-4 animate-spin" />
@@ -989,18 +1165,18 @@ const MessageCard: React.FC<{
             onClick={onClick}
             className={cn(
                 "w-full p-4 text-left transition-all group",
-                !isLast && "border-b border-slate-100 dark:border-slate-800",
+                !isLast && "border-b border-border",
                 isSelected 
-                    ? "bg-slate-50 dark:bg-slate-900" 
-                    : "hover:bg-slate-50/50 dark:hover:bg-slate-900/50",
-                isUnread && !isSelected && "bg-blue-50/50 dark:bg-blue-950/20"
+                    ? "bg-muted" 
+                    : "hover:bg-muted/50",
+                isUnread && !isSelected && "bg-foreground/[0.03]"
             )}
         >
             <div className="flex items-start gap-3">
                 {/* Avatar */}
                 <div className="relative shrink-0">
                     {message.crmContact?.avatarUrl ? (
-                        <Avatar className="h-11 w-11 ring-2 ring-emerald-500/20">
+                        <Avatar className="h-11 w-11 ring-2 ring-foreground/10">
                             <AvatarImage src={message.crmContact.avatarUrl} />
                             <AvatarFallback className={avatarColor}>{getInitials(fromName)}</AvatarFallback>
                         </Avatar>
@@ -1013,8 +1189,8 @@ const MessageCard: React.FC<{
                         </div>
                     )}
                     {message.crmContact && (
-                        <div className="absolute -bottom-0.5 -right-0.5 h-5 w-5 rounded-full bg-emerald-500 flex items-center justify-center ring-2 ring-white dark:ring-slate-950">
-                            <Building2 className="h-3 w-3 text-white" />
+                        <div className="absolute -bottom-0.5 -right-0.5 h-5 w-5 rounded-full bg-foreground flex items-center justify-center ring-2 ring-background">
+                            <Building2 className="h-3 w-3 text-background" />
                         </div>
                     )}
                 </div>
@@ -1024,33 +1200,33 @@ const MessageCard: React.FC<{
                     <div className="flex items-center justify-between gap-2 mb-1">
                         <span className={cn(
                             "text-sm truncate",
-                            isUnread ? "font-semibold text-slate-900 dark:text-slate-100" : "font-medium text-slate-700 dark:text-slate-300"
+                            isUnread ? "font-semibold text-foreground" : "font-medium text-foreground"
                         )}>
                             {fromName}
                         </span>
                         <div className="flex items-center gap-2 shrink-0">
                             {message.isPinned && (
-                                <Star className="h-3.5 w-3.5 fill-amber-400 text-amber-400" />
+                                <Star className="h-3.5 w-3.5 fill-foreground text-foreground" />
                             )}
-                            <span className="text-xs text-slate-400">
+                            <span className="text-xs text-muted-foreground">
                                 {formatDate(message.internalDate)}
                             </span>
                         </div>
                     </div>
                     <p className={cn(
                         "text-sm truncate mb-1",
-                        isUnread ? "font-medium text-slate-800 dark:text-slate-200" : "text-slate-600 dark:text-slate-400"
+                        isUnread ? "font-medium text-foreground" : "text-muted-foreground"
                     )}>
                         {subject}
                     </p>
-                    <p className="text-xs text-slate-500 line-clamp-1">
+                    <p className="text-xs text-muted-foreground line-clamp-1">
                         {message.snippet}
                     </p>
                     
                     {/* Tags */}
                     {message.crmContact && (
                         <div className="mt-2">
-                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400">
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium bg-muted text-foreground">
                                 <Building2 className="h-3 w-3" />
                                 {message.crmContact.companyName}
                             </span>
@@ -1060,7 +1236,7 @@ const MessageCard: React.FC<{
 
                 {/* Unread indicator */}
                 {isUnread && (
-                    <div className="h-2.5 w-2.5 rounded-full bg-blue-500 shrink-0 mt-1.5" />
+                    <div className="h-2.5 w-2.5 rounded-full bg-foreground shrink-0 mt-1.5" />
                 )}
             </div>
         </button>
@@ -1068,13 +1244,58 @@ const MessageCard: React.FC<{
 };
 
 // Conversation View Component
+/** Decode base64url-encoded Gmail body */
+function decodeBase64Url(data: string): string {
+    try {
+        const base64 = data.replace(/-/g, '+').replace(/_/g, '/');
+        return decodeURIComponent(escape(atob(base64)));
+    } catch {
+        try { return atob(data.replace(/-/g, '+').replace(/_/g, '/')); } catch { return data; }
+    }
+}
+
+/** Extract full email body from Gmail message payload */
+function extractEmailBody(message: GmailMessage): { text: string; html: string } {
+    let text = '';
+    let html = '';
+
+    const extractFromParts = (parts: any[]) => {
+        for (const part of parts) {
+            if (part.parts) {
+                extractFromParts(part.parts);
+            }
+            if (part.mimeType === 'text/plain' && part.body?.data && !text) {
+                text = decodeBase64Url(part.body.data);
+            }
+            if (part.mimeType === 'text/html' && part.body?.data && !html) {
+                html = decodeBase64Url(part.body.data);
+            }
+        }
+    };
+
+    if (message.payload) {
+        if (message.payload.parts) {
+            extractFromParts(message.payload.parts);
+        } else if (message.payload.body?.data) {
+            const decoded = decodeBase64Url(message.payload.body.data);
+            if (message.payload.mimeType === 'text/html') {
+                html = decoded;
+            } else {
+                text = decoded;
+            }
+        }
+    }
+
+    return { text, html };
+}
+
 const ConversationView: React.FC<{
     message: EnrichedMessage;
     onBack: () => void;
     onAction: (action: 'trash' | 'star' | 'unstar') => void;
     onReply: () => void;
     onNavigateToCompany: (id: string) => void;
-    onCreateContact: (name: string, email: string) => void;
+    onCreateContact: (name: string, email: string, body?: string) => void;
     getHeader: (msg: GmailMessage, name: string) => string;
     formatDate: (ts: string) => string;
 }> = ({ message, onBack, onAction, onReply, onNavigateToCompany, onCreateContact, getHeader }) => {
@@ -1082,27 +1303,28 @@ const ConversationView: React.FC<{
     const fromEmail = getHeader(message, 'From').match(/<(.+)>/)?.[1] || getHeader(message, 'From');
     const subject = getHeader(message, 'Subject') || '(Sans objet)';
     const avatarColor = getAvatarColor(fromName);
+    const emailBody = extractEmailBody(message);
     
     return (
         <>
             {/* Header */}
-            <div className="px-6 py-4 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between bg-white dark:bg-slate-950 shrink-0">
+            <div className="px-6 py-4 border-b border-border flex items-center justify-between bg-background shrink-0">
                 <div className="flex items-center gap-3 min-w-0">
                     <Button variant="ghost" size="icon" onClick={onBack} className="lg:hidden shrink-0">
                         <X className="h-4 w-4" />
                     </Button>
-                    <h2 className="font-semibold text-slate-900 dark:text-slate-100 truncate">{subject}</h2>
+                    <h2 className="font-semibold text-foreground truncate">{subject}</h2>
                 </div>
                 <div className="flex items-center gap-1 shrink-0">
                     <Button
                         variant="ghost"
                         size="icon"
                         onClick={() => onAction(message.isPinned ? 'unstar' : 'star')}
-                        className={cn("h-9 w-9", message.isPinned && "text-amber-500")}
+                        className={cn("h-9 w-9", message.isPinned && "text-foreground")}
                     >
                         <Star className={cn("h-4 w-4", message.isPinned && "fill-current")} />
                     </Button>
-                    <Button variant="ghost" size="icon" onClick={() => onAction('trash')} className="h-9 w-9 text-slate-500 hover:text-red-600">
+                    <Button variant="ghost" size="icon" onClick={() => onAction('trash')} className="h-9 w-9 text-muted-foreground hover:text-foreground">
                         <Trash2 className="h-4 w-4" />
                     </Button>
                     <Button variant="ghost" size="icon" className="h-9 w-9">
@@ -1113,15 +1335,15 @@ const ConversationView: React.FC<{
 
             {/* CRM Banner - Contact found */}
             {message.crmContact && (
-                <div className="px-6 py-4 bg-gradient-to-r from-emerald-50 to-teal-50 dark:from-emerald-950/30 dark:to-teal-950/30 border-b border-emerald-100 dark:border-emerald-900/50 shrink-0">
+                <div className="px-6 py-4 bg-muted border-b border-border shrink-0">
                     <div className="flex items-center justify-between">
                         <div className="flex items-center gap-3">
-                            <div className="h-10 w-10 rounded-xl bg-emerald-500 flex items-center justify-center shadow-lg shadow-emerald-500/20">
-                                <Building2 className="h-5 w-5 text-white" />
+                            <div className="h-10 w-10 rounded-lg bg-foreground flex items-center justify-center">
+                                <Building2 className="h-5 w-5 text-background" />
                             </div>
                             <div>
-                                <p className="font-semibold text-emerald-900 dark:text-emerald-100">{message.crmContact.companyName}</p>
-                                <p className="text-sm text-emerald-700 dark:text-emerald-400">
+                                <p className="font-semibold text-foreground">{message.crmContact.companyName}</p>
+                                <p className="text-sm text-muted-foreground">
                                     {message.crmContact.name} • {message.crmContact.role}
                                 </p>
                             </div>
@@ -1130,7 +1352,7 @@ const ConversationView: React.FC<{
                             variant="outline"
                             size="sm"
                             onClick={() => onNavigateToCompany(message.crmContact.companyId)}
-                            className="gap-2 border-emerald-200 dark:border-emerald-800 text-emerald-700 dark:text-emerald-400 hover:bg-emerald-100 dark:hover:bg-emerald-900/50"
+                            className="gap-2 border-border text-foreground hover:bg-muted"
                         >
                             Voir la fiche
                             <ArrowUpRight className="h-3.5 w-3.5" />
@@ -1141,23 +1363,23 @@ const ConversationView: React.FC<{
 
             {/* CTA Banner - Contact NOT in CRM */}
             {!message.crmContact && fromEmail && !fromEmail.includes('@lexia') && (
-                <div className="px-6 py-4 bg-gradient-to-r from-amber-50 to-orange-50 dark:from-amber-950/30 dark:to-orange-950/30 border-b border-amber-200 dark:border-amber-800/50 shrink-0">
+                <div className="px-6 py-4 bg-muted border-b border-border shrink-0">
                     <div className="flex items-center justify-between">
                         <div className="flex items-center gap-3">
-                            <div className="h-10 w-10 rounded-xl bg-amber-500 flex items-center justify-center shadow-lg shadow-amber-500/20">
-                                <UserPlus className="h-5 w-5 text-white" />
+                            <div className="h-10 w-10 rounded-lg bg-foreground flex items-center justify-center">
+                                <UserPlus className="h-5 w-5 text-background" />
                             </div>
                             <div>
-                                <p className="font-semibold text-amber-900 dark:text-amber-100">Contact inconnu</p>
-                                <p className="text-sm text-amber-700 dark:text-amber-400">
+                                <p className="font-semibold text-foreground">Contact inconnu</p>
+                                <p className="text-sm text-muted-foreground">
                                     {fromName} n'est pas dans vos fiches
                                 </p>
                             </div>
                         </div>
                         <Button
                             size="sm"
-                            onClick={() => onCreateContact(fromName, fromEmail)}
-                            className="gap-2 bg-amber-600 hover:bg-amber-700 text-white"
+                            onClick={() => onCreateContact(fromName, fromEmail, emailBody.text || emailBody.html)}
+                            className="gap-2 bg-foreground hover:bg-foreground/90 text-background"
                         >
                             <UserPlus className="h-4 w-4" />
                             Créer le contact
@@ -1170,7 +1392,7 @@ const ConversationView: React.FC<{
             <ScrollArea className="flex-1">
                 <div className="p-6">
                     {/* Sender */}
-                    <div className="flex items-start gap-4 mb-6 pb-6 border-b border-slate-100 dark:border-slate-800">
+                    <div className="flex items-start gap-4 mb-6 pb-6 border-b border-border">
                         {message.crmContact?.avatarUrl ? (
                             <Avatar className="h-12 w-12">
                                 <AvatarImage src={message.crmContact.avatarUrl} />
@@ -1184,18 +1406,18 @@ const ConversationView: React.FC<{
                         <div className="flex-1 min-w-0">
                             <div className="flex items-start justify-between gap-4">
                                 <div>
-                                    <p className="font-semibold text-slate-900 dark:text-slate-100">{fromName}</p>
-                                    <p className="text-sm text-slate-500">{fromEmail}</p>
+                                    <p className="font-semibold text-foreground">{fromName}</p>
+                                    <p className="text-sm text-muted-foreground">{fromEmail}</p>
                                 </div>
                                 <div className="text-right shrink-0">
-                                    <p className="text-sm text-slate-500">
+                                    <p className="text-sm text-muted-foreground">
                                         {new Date(parseInt(message.internalDate)).toLocaleDateString('fr-FR', {
                                             day: 'numeric',
                                             month: 'long',
                                             year: 'numeric'
                                         })}
                                     </p>
-                                    <p className="text-xs text-slate-400">
+                                    <p className="text-xs text-muted-foreground">
                                         {new Date(parseInt(message.internalDate)).toLocaleTimeString('fr-FR', {
                                             hour: '2-digit',
                                             minute: '2-digit'
@@ -1203,26 +1425,37 @@ const ConversationView: React.FC<{
                                     </p>
                                 </div>
                             </div>
-                            <p className="text-xs text-slate-400 mt-2">
+                            <p className="text-xs text-muted-foreground mt-2">
                                 À: {getHeader(message, 'To')}
                             </p>
                         </div>
                     </div>
 
                     {/* Body */}
-                    <div className="prose prose-slate dark:prose-invert max-w-none">
-                        <p className="text-slate-700 dark:text-slate-300 leading-relaxed whitespace-pre-wrap text-[15px]">
-                            {message.snippet}
-                        </p>
+                    <div className="prose prose-neutral max-w-none">
+                        {emailBody.html ? (
+                            <div
+                                className="text-foreground text-[15px] leading-relaxed [&_img]:max-w-full [&_a]:text-foreground [&_a]:underline overflow-x-auto"
+                                dangerouslySetInnerHTML={{ __html: emailBody.html }}
+                            />
+                        ) : emailBody.text ? (
+                            <p className="text-foreground leading-relaxed whitespace-pre-wrap text-[15px]">
+                                {emailBody.text}
+                            </p>
+                        ) : (
+                            <p className="text-foreground leading-relaxed whitespace-pre-wrap text-[15px]">
+                                {message.snippet}
+                            </p>
+                        )}
                     </div>
                 </div>
             </ScrollArea>
 
             {/* Reply Bar */}
-            <div className="p-4 border-t border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/50 shrink-0">
+            <div className="p-4 border-t border-border bg-muted/50 shrink-0">
                 <Button 
                     onClick={onReply} 
-                    className="w-full gap-2 bg-slate-900 hover:bg-slate-800 dark:bg-slate-100 dark:text-slate-900 dark:hover:bg-slate-200"
+                    className="w-full gap-2 bg-foreground text-background hover:bg-foreground/90"
                 >
                     <Reply className="h-4 w-4" />
                     Répondre
@@ -1250,15 +1483,17 @@ const ComposeModal: React.FC<{
     onSearchContacts: (query: string) => void;
     onSelectContact: (contact: any) => void;
     onRemoveContact: (email: string) => void;
-    onAddAttachment: (name: string, url: string) => void;
+    onAddAttachment: (name: string, url: string, file?: File) => void;
     onRemoveAttachment: (id: string) => void;
     onFocusContacts: () => void;
     onBlurContacts: () => void;
+    signature?: string;
 }> = ({
     form, setForm, contacts, filteredContacts, selectedContacts, contactSearch,
     showSuggestions, attachments, hasCrmRecipients, isSending, sendSuccess,
     onClose, onSubmit, onSearchContacts, onSelectContact,
-    onRemoveContact, onAddAttachment, onRemoveAttachment, onFocusContacts, onBlurContacts
+    onRemoveContact, onAddAttachment, onRemoveAttachment, onFocusContacts, onBlurContacts,
+    signature
 }) => {
     const [showAttachmentForm, setShowAttachmentForm] = useState(false);
     const [attachmentName, setAttachmentName] = useState('');
@@ -1274,27 +1509,34 @@ const ComposeModal: React.FC<{
         }
     };
 
-    const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
         if (file) {
-            // Simulate file upload - in real app, would upload to cloud storage
-            const fakeUrl = `https://drive.google.com/file/${Date.now()}/${file.name}`;
-            onAddAttachment(file.name, fakeUrl);
+            // Try to upload to Drive for CRM tracking, but keep the real File for email attachment
+            let driveUrl = '';
+            try {
+                const { googleDriveService } = await import('../services/googleDrive');
+                const uploaded = await googleDriveService.uploadFile(file, 'Email Attachments');
+                driveUrl = uploaded.webViewLink || `https://drive.google.com/file/d/${uploaded.id}/view`;
+            } catch {
+                driveUrl = `file://${file.name}`;
+            }
+            onAddAttachment(file.name, driveUrl, file);
         }
     };
 
     if (sendSuccess) {
         return (
-            <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4">
-                <div className="bg-white dark:bg-slate-950 rounded-2xl p-8 text-center shadow-2xl">
-                    <div className="h-16 w-16 rounded-full bg-emerald-100 dark:bg-emerald-900/50 flex items-center justify-center mx-auto mb-4">
-                        <CheckCircle2 className="h-8 w-8 text-emerald-600" />
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-foreground/60 backdrop-blur-sm p-4">
+                <div className="bg-background rounded-lg p-8 text-center shadow-sm">
+                    <div className="h-16 w-16 rounded-full bg-muted flex items-center justify-center mx-auto mb-4">
+                        <CheckCircle2 className="h-8 w-8 text-foreground" />
                     </div>
-                    <h3 className="text-lg font-semibold text-slate-900 dark:text-slate-100 mb-2">
+                    <h3 className="text-lg font-semibold text-foreground mb-2">
                         Message envoyé !
                     </h3>
                     {attachments.length > 0 && hasCrmRecipients && (
-                        <p className="text-sm text-emerald-600">
+                        <p className="text-sm text-muted-foreground">
                             {attachments.length} document{attachments.length > 1 ? 's' : ''} ajouté{attachments.length > 1 ? 's' : ''} à la fiche entreprise
                         </p>
                     )}
@@ -1304,15 +1546,15 @@ const ComposeModal: React.FC<{
     }
 
     return (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4">
-            <div className="w-full max-w-2xl max-h-[90vh] flex flex-col bg-white dark:bg-slate-950 rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-800 overflow-hidden">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-foreground/60 backdrop-blur-sm p-4">
+            <div className="w-full max-w-2xl max-h-[90vh] flex flex-col bg-background rounded-lg shadow-sm border border-border overflow-hidden">
                 {/* Header */}
-                <div className="px-6 py-4 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between bg-slate-50 dark:bg-slate-900">
+                <div className="px-6 py-4 border-b border-border flex items-center justify-between bg-muted">
                     <div className="flex items-center gap-3">
-                        <div className="h-9 w-9 rounded-lg bg-slate-900 dark:bg-slate-100 flex items-center justify-center">
-                            <PenSquare className="h-4 w-4 text-white dark:text-slate-900" />
+                        <div className="h-9 w-9 rounded-lg bg-foreground flex items-center justify-center">
+                            <PenSquare className="h-4 w-4 text-background" />
                         </div>
-                        <h2 className="font-semibold text-slate-900 dark:text-slate-100">Nouveau message</h2>
+                        <h2 className="font-semibold text-foreground">Nouveau message</h2>
                     </div>
                     <Button variant="ghost" size="icon" onClick={onClose} className="h-8 w-8">
                         <X className="h-4 w-4" />
@@ -1320,42 +1562,32 @@ const ComposeModal: React.FC<{
                 </div>
 
                 {/* Recipients */}
-                <div className="px-6 py-4 border-b border-slate-200 dark:border-slate-800 relative">
+                <div className="px-6 py-4 border-b border-border relative">
                     <div className="flex items-start gap-3 flex-wrap">
-                        <span className="text-sm font-medium text-slate-500 py-2">À:</span>
+                        <span className="text-sm font-medium text-muted-foreground py-2">À:</span>
                         {selectedContacts.map(contact => (
                             <div
                                 key={contact.email}
-                                className={cn(
-                                    "flex items-center gap-2 px-2.5 py-1.5 rounded-full",
-                                    contact.companyId 
-                                        ? "bg-emerald-100 dark:bg-emerald-900/30" 
-                                        : "bg-slate-100 dark:bg-slate-800"
-                                )}
+                                className="flex items-center gap-2 px-2.5 py-1.5 rounded-full bg-muted"
                             >
                                 <Avatar className="h-5 w-5">
                                     {contact.avatarUrl && <AvatarImage src={contact.avatarUrl} />}
-                                    <AvatarFallback className="text-[10px] bg-slate-200 dark:bg-slate-700">
+                                    <AvatarFallback className="text-[10px] bg-muted">
                                         {getInitials(contact.name)}
                                     </AvatarFallback>
                                 </Avatar>
-                                <span className={cn(
-                                    "text-sm font-medium",
-                                    contact.companyId 
-                                        ? "text-emerald-700 dark:text-emerald-400" 
-                                        : "text-slate-700 dark:text-slate-300"
-                                )}>
+                                <span className="text-sm font-medium text-foreground">
                                     {contact.name}
                                 </span>
                                 {contact.companyId && (
-                                    <Building2 className="h-3 w-3 text-emerald-600" />
+                                    <Building2 className="h-3 w-3 text-foreground" />
                                 )}
                                 <button
                                     type="button"
                                     onClick={() => onRemoveContact(contact.email)}
-                                    className="hover:bg-slate-200 dark:hover:bg-slate-700 rounded-full p-0.5 transition-colors"
+                                    className="hover:bg-foreground/10 rounded-full p-0.5 transition-colors"
                                 >
-                                    <X className="h-3 w-3 text-slate-500" />
+                                    <X className="h-3 w-3 text-muted-foreground" />
                                 </button>
                             </div>
                         ))}
@@ -1365,14 +1597,14 @@ const ComposeModal: React.FC<{
                             onChange={e => onSearchContacts(e.target.value)}
                             onFocus={onFocusContacts}
                             onBlur={onBlurContacts}
-                            className="flex-1 min-w-[200px] bg-transparent text-sm outline-none py-2 text-slate-900 dark:text-slate-100 placeholder:text-slate-400"
+                            className="flex-1 min-w-[200px] bg-transparent text-sm outline-none py-2 text-foreground placeholder:text-muted-foreground"
                             placeholder={contacts.length > 0 ? `Rechercher parmi ${contacts.length} contacts...` : "Chargement..."}
                         />
                     </div>
 
                     {/* Contact Suggestions */}
                     {showSuggestions && (
-                        <div className="absolute left-6 right-6 top-full mt-1 bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl shadow-xl max-h-64 overflow-y-auto z-50">
+                        <div className="absolute left-6 right-6 top-full mt-1 bg-background border border-border rounded-lg shadow-sm max-h-64 overflow-y-auto z-50">
                             {filteredContacts.length > 0 ? (
                                 filteredContacts.map(contact => {
                                     const color = getAvatarColor(contact.name);
@@ -1384,7 +1616,7 @@ const ComposeModal: React.FC<{
                                                 e.preventDefault();
                                                 onSelectContact(contact);
                                             }}
-                                            className="w-full flex items-center gap-3 px-4 py-3 hover:bg-slate-50 dark:hover:bg-slate-900 transition-colors text-left border-b border-slate-100 dark:border-slate-800 last:border-0"
+                                            className="w-full flex items-center gap-3 px-4 py-3 hover:bg-muted transition-colors text-left border-b border-border last:border-0"
                                         >
                                             {contact.avatarUrl ? (
                                                 <Avatar className="h-9 w-9">
@@ -1397,17 +1629,17 @@ const ComposeModal: React.FC<{
                                                 </div>
                                             )}
                                             <div className="flex-1 min-w-0">
-                                                <p className="text-sm font-medium text-slate-900 dark:text-slate-100">{contact.name}</p>
-                                                <p className="text-xs text-slate-500">{contact.email}</p>
+                                                <p className="text-sm font-medium text-foreground">{contact.name}</p>
+                                                <p className="text-xs text-muted-foreground">{contact.email}</p>
                                             </div>
-                                            <span className="text-xs font-medium px-2 py-1 rounded-full bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400">
+                                            <span className="text-xs font-medium px-2 py-1 rounded-full bg-muted text-foreground">
                                                 {contact.companyName}
                                             </span>
                                         </button>
                                     );
                                 })
                             ) : (
-                                <div className="p-4 text-center text-sm text-slate-500">
+                                <div className="p-4 text-center text-sm text-muted-foreground">
                                     Aucun contact trouvé
                                 </div>
                             )}
@@ -1417,14 +1649,14 @@ const ComposeModal: React.FC<{
 
                 {/* Form */}
                 <form onSubmit={onSubmit} className="flex-1 flex flex-col overflow-hidden">
-                    <div className="px-6 py-3 border-b border-slate-200 dark:border-slate-800">
+                    <div className="px-6 py-3 border-b border-border">
                         <input
                             type="text"
                             required
                             value={form.subject}
                             onChange={e => setForm({ ...form, subject: e.target.value })}
                             placeholder="Objet du message"
-                            className="w-full bg-transparent text-lg font-medium outline-none text-slate-900 dark:text-slate-100 placeholder:text-slate-400"
+                            className="w-full bg-transparent text-lg font-medium outline-none text-foreground placeholder:text-muted-foreground"
                         />
                     </div>
                     
@@ -1434,14 +1666,24 @@ const ComposeModal: React.FC<{
                             required
                             value={form.body}
                             onChange={e => setForm({ ...form, body: e.target.value })}
-                            className="w-full bg-transparent text-sm outline-none resize-none text-slate-700 dark:text-slate-300 placeholder:text-slate-400 leading-relaxed"
+                            className="w-full bg-transparent text-sm outline-none resize-none text-foreground placeholder:text-muted-foreground leading-relaxed"
                             placeholder="Écrivez votre message..."
                         />
 
+                        {/* Gmail Signature Preview */}
+                        {signature && (
+                            <div className="mt-4 pt-4 border-t border-border">
+                                <div
+                                    className="text-sm text-muted-foreground [&_a]:text-foreground [&_a]:underline [&_img]:max-h-24 [&_table]:text-sm"
+                                    dangerouslySetInnerHTML={{ __html: signature }}
+                                />
+                            </div>
+                        )}
+
                         {/* Attachments Section */}
-                        <div className="mt-4 pt-4 border-t border-slate-200 dark:border-slate-800">
+                        <div className="mt-4 pt-4 border-t border-border">
                             <div className="flex items-center justify-between mb-3">
-                                <Label className="text-sm font-medium text-slate-700 dark:text-slate-300 flex items-center gap-2">
+                                <Label className="text-sm font-medium text-foreground flex items-center gap-2">
                                     <Paperclip className="h-4 w-4" />
                                     Pièces jointes
                                     {attachments.length > 0 && (
@@ -1480,7 +1722,7 @@ const ComposeModal: React.FC<{
 
                             {/* Add Link Form */}
                             {showAttachmentForm && (
-                                <div className="mb-3 p-3 bg-slate-50 dark:bg-slate-900 rounded-lg space-y-2">
+                                <div className="mb-3 p-3 bg-muted rounded-lg space-y-2">
                                     <Input
                                         type="text"
                                         value={attachmentName}
@@ -1528,27 +1770,20 @@ const ComposeModal: React.FC<{
                                         return (
                                             <div
                                                 key={att.id}
-                                                className="flex items-center gap-3 p-2 bg-slate-50 dark:bg-slate-900 rounded-lg group"
+                                                className="flex items-center gap-3 p-2 bg-muted rounded-lg group"
                                             >
-                                                <div className={cn(
-                                                    "h-8 w-8 rounded flex items-center justify-center",
-                                                    att.type === 'pdf' ? "bg-red-100 text-red-600" :
-                                                    att.type === 'doc' ? "bg-blue-100 text-blue-600" :
-                                                    att.type === 'sheet' ? "bg-emerald-100 text-emerald-600" :
-                                                    att.type === 'image' ? "bg-purple-100 text-purple-600" :
-                                                    "bg-slate-200 text-slate-600"
-                                                )}>
+                                                <div className="h-8 w-8 rounded flex items-center justify-center bg-foreground/5 text-foreground">
                                                     <Icon className="h-4 w-4" />
                                                 </div>
                                                 <div className="flex-1 min-w-0">
-                                                    <p className="text-sm font-medium text-slate-700 dark:text-slate-300 truncate">
+                                                    <p className="text-sm font-medium text-foreground truncate">
                                                         {att.name}
                                                     </p>
                                                     <a 
                                                         href={att.url} 
                                                         target="_blank" 
                                                         rel="noopener noreferrer"
-                                                        className="text-xs text-blue-600 hover:underline flex items-center gap-1"
+                                                        className="text-xs text-muted-foreground hover:text-foreground hover:underline flex items-center gap-1"
                                                     >
                                                         Voir le fichier
                                                         <ExternalLink className="h-3 w-3" />
@@ -1559,7 +1794,7 @@ const ComposeModal: React.FC<{
                                                     variant="ghost"
                                                     size="icon"
                                                     onClick={() => onRemoveAttachment(att.id)}
-                                                    className="h-7 w-7 opacity-0 group-hover:opacity-100 text-slate-400 hover:text-red-500"
+                                                    className="h-7 w-7 opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-foreground"
                                                 >
                                                     <X className="h-4 w-4" />
                                                 </Button>
@@ -1571,14 +1806,14 @@ const ComposeModal: React.FC<{
 
                             {/* CRM Sync Notice */}
                             {attachments.length > 0 && hasCrmRecipients && (
-                                <div className="mt-3 p-3 bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800 rounded-lg">
+                                <div className="mt-3 p-3 bg-muted border border-border rounded-lg">
                                     <div className="flex items-start gap-2">
-                                        <Building2 className="h-4 w-4 text-emerald-600 mt-0.5 shrink-0" />
+                                        <Building2 className="h-4 w-4 text-foreground mt-0.5 shrink-0" />
                                         <div>
-                                            <p className="text-sm font-medium text-emerald-800 dark:text-emerald-200">
+                                            <p className="text-sm font-medium text-foreground">
                                                 Synchronisation CRM
                                             </p>
-                                            <p className="text-xs text-emerald-600 dark:text-emerald-400">
+                                            <p className="text-xs text-muted-foreground">
                                                 Ces documents seront automatiquement ajoutés à la fiche entreprise des destinataires CRM
                                             </p>
                                         </div>
@@ -1588,14 +1823,14 @@ const ComposeModal: React.FC<{
                         </div>
                     </div>
                     
-                    <div className="px-6 py-4 border-t border-slate-200 dark:border-slate-800 flex items-center justify-between bg-slate-50 dark:bg-slate-900">
-                        <Button type="button" variant="ghost" onClick={onClose} className="text-slate-500">
+                    <div className="px-6 py-4 border-t border-border flex items-center justify-between bg-muted">
+                        <Button type="button" variant="ghost" onClick={onClose} className="text-muted-foreground">
                             Annuler
                         </Button>
                         <Button 
                             type="submit" 
                             disabled={isSending}
-                            className="gap-2 bg-slate-900 hover:bg-slate-800 dark:bg-slate-100 dark:text-slate-900 dark:hover:bg-slate-200"
+                            className="gap-2 bg-foreground text-background hover:bg-foreground/90"
                         >
                             {isSending ? (
                                 <>

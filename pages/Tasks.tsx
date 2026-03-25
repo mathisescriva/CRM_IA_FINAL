@@ -1,14 +1,14 @@
 /**
- * Tasks Page - Kanban & List views with Shadcn UI
- * Supports multiple contributors per task
+ * Tasks Page — Clean + Visual design
+ * Notion/Linear bones with color accents
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { 
-    CheckCircle2, Circle, Clock, AlertCircle, Plus, LayoutGrid, List,
-    Building2, Calendar, Search, X, Trash2, Users,
-    Sparkles, MessageCircle
+import {
+    CheckCircle2, Circle, Clock, Plus, LayoutGrid, List,
+    Building2, Calendar, Search, X, Trash2,
+    MessageCircle, Flame, Target, AlertTriangle, TrendingUp
 } from 'lucide-react';
 import { workspaceService, Task } from '../services/workspace';
 import { authService, LEXIA_TEAM } from '../services/auth';
@@ -17,769 +17,642 @@ import { cn, getInitials, formatRelativeTime } from '../lib/utils';
 import { MentionInput } from '../components/MentionInput';
 import { TaskComment } from '../types';
 
-// Shadcn UI Components
-import { Button } from '../components/ui/Button';
-import { Input } from '../components/ui/Input';
-import { Badge } from '../components/ui/Badge';
-import { Card, CardContent } from '../components/ui/Card';
 import { Avatar, AvatarImage, AvatarFallback } from '../components/ui/Avatar';
 import { ScrollArea } from '../components/ui/ScrollArea';
+import { Tooltip } from '../components/ui/Tooltip';
 
 type ViewMode = 'kanban' | 'list';
 type TaskStatus = 'pending' | 'in_progress' | 'completed';
+type FilterMode = 'all' | 'mine' | 'urgent' | 'overdue';
 
-const COLUMNS: { id: TaskStatus; title: string; icon: React.ElementType; color: string }[] = [
-    { id: 'pending', title: 'À faire', icon: Circle, color: 'text-slate-500' },
-    { id: 'in_progress', title: 'En cours', icon: Clock, color: 'text-blue-500' },
-    { id: 'completed', title: 'Terminée', icon: CheckCircle2, color: 'text-green-500' }
-];
+const NEXT_STATUS: Record<TaskStatus, TaskStatus> = { pending: 'in_progress', in_progress: 'completed', completed: 'pending' };
+
+function dueDateInfo(date: string) {
+    const d = new Date(date);
+    const now = new Date(); now.setHours(0, 0, 0, 0);
+    const t = new Date(d); t.setHours(0, 0, 0, 0);
+    const diff = Math.ceil((t.getTime() - now.getTime()) / 86400000);
+    if (diff < 0) return { text: `${Math.abs(diff)}j retard`, overdue: true, today: false };
+    if (diff === 0) return { text: "Aujourd'hui", overdue: false, today: true };
+    if (diff === 1) return { text: 'Demain', overdue: false, today: false };
+    if (diff <= 7) return { text: `Dans ${diff}j`, overdue: false, today: false };
+    return { text: d.toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' }), overdue: false, today: false };
+}
+
+function isOverdueTask(t: { dueDate?: string; status: string }) {
+    if (!t.dueDate || t.status === 'completed') return false;
+    const d = new Date(t.dueDate); d.setHours(0, 0, 0, 0);
+    const now = new Date(); now.setHours(0, 0, 0, 0);
+    return d.getTime() < now.getTime();
+}
 
 export const Tasks: React.FC = () => {
     const navigate = useNavigate();
     const { openTaskModal } = useApp();
     const currentUser = authService.getCurrentUser();
-    
+
     const [tasks, setTasks] = useState<Task[]>([]);
-    const [viewMode, setViewMode] = useState<ViewMode>('kanban');
-    const [searchQuery, setSearchQuery] = useState('');
-    const [showOnlyMine, setShowOnlyMine] = useState(false);
+    const [view, setView] = useState<ViewMode>('kanban');
+    const [search, setSearch] = useState('');
+    const [filter, setFilter] = useState<FilterMode>('all');
     const [draggedTask, setDraggedTask] = useState<Task | null>(null);
     const [selectedTask, setSelectedTask] = useState<Task | null>(null);
 
     useEffect(() => {
-        loadTasks();
-        
-        const handleUpdate = () => loadTasks();
-        window.addEventListener('tasks-update', handleUpdate);
-        window.addEventListener('activity-update', handleUpdate);
-        return () => {
-            window.removeEventListener('tasks-update', handleUpdate);
-            window.removeEventListener('activity-update', handleUpdate);
-        };
+        load();
+        const h = () => load();
+        window.addEventListener('tasks-update', h);
+        window.addEventListener('activity-update', h);
+        return () => { window.removeEventListener('tasks-update', h); window.removeEventListener('activity-update', h); };
     }, []);
 
-    const loadTasks = async () => {
-        setTasks(await workspaceService.getTasks());
-    };
+    const load = async () => setTasks(await workspaceService.getTasks());
+    const changeStatus = async (id: string, s: TaskStatus) => { await workspaceService.updateTask(id, { status: s }); load(); };
+    const remove = async (id: string) => { if (!confirm('Supprimer cette tâche ?')) return; await workspaceService.deleteTask(id); if (selectedTask?.id === id) setSelectedTask(null); load(); };
 
-    const handleStatusChange = async (taskId: string, newStatus: TaskStatus) => {
-        await workspaceService.updateTask(taskId, { status: newStatus });
-        loadTasks();
-    };
-
-    const handleDelete = async (taskId: string) => {
-        if (confirm('Supprimer cette tâche ?')) {
-            await workspaceService.deleteTask(taskId);
-            loadTasks();
-        }
-    };
-
-    // Check if user is contributor (handle legacy string format)
-    const isContributor = (task: Task) => {
+    const isMine = (t: Task) => {
         if (!currentUser) return false;
-        const assigned = Array.isArray(task.assignedTo) ? task.assignedTo : [task.assignedTo];
-        return assigned.includes(currentUser.id);
+        const a = Array.isArray(t.assignedTo) ? t.assignedTo : [t.assignedTo];
+        return a.includes(currentUser.id);
     };
 
-    // Filter tasks
-    const filteredTasks = tasks.filter(task => {
-        if (searchQuery) {
-            const query = searchQuery.toLowerCase();
-            if (!task.title.toLowerCase().includes(query) &&
-                !task.companyName?.toLowerCase().includes(query)) {
-                return false;
-            }
-        }
-        if (showOnlyMine && !isContributor(task)) {
-            return false;
-        }
+    const filtered = useMemo(() => tasks.filter(t => {
+        if (search) { const q = search.toLowerCase(); if (!t.title.toLowerCase().includes(q) && !t.companyName?.toLowerCase().includes(q)) return false; }
+        if (filter === 'mine' && !isMine(t)) return false;
+        if (filter === 'urgent' && t.priority !== 'high') return false;
+        if (filter === 'overdue' && !isOverdueTask(t)) return false;
         return true;
-    });
+    }), [tasks, search, filter]);
 
-    // Group by status for Kanban
-    const tasksByStatus: Record<TaskStatus, Task[]> = {
-        pending: filteredTasks.filter(t => t.status === 'pending'),
-        in_progress: filteredTasks.filter(t => t.status === 'in_progress'),
-        completed: filteredTasks.filter(t => t.status === 'completed')
-    };
+    const byStatus: Record<TaskStatus, Task[]> = useMemo(() => ({
+        pending: filtered.filter(t => t.status === 'pending'),
+        in_progress: filtered.filter(t => t.status === 'in_progress'),
+        completed: filtered.filter(t => t.status === 'completed'),
+    }), [filtered]);
 
-    // Stats
-    const myTasksCount = tasks.filter(t => isContributor(t) && t.status !== 'completed').length;
-    const urgentCount = tasks.filter(t => t.priority === 'high' && t.status !== 'completed').length;
+    const counts = useMemo(() => ({
+        total: tasks.filter(t => t.status !== 'completed').length,
+        mine: tasks.filter(t => isMine(t) && t.status !== 'completed').length,
+        urgent: tasks.filter(t => t.priority === 'high' && t.status !== 'completed').length,
+        overdue: tasks.filter(t => isOverdueTask(t)).length,
+        done: tasks.filter(t => t.status === 'completed').length,
+    }), [tasks]);
 
-    // Drag handlers
-    const handleDragStart = (task: Task) => {
-        setDraggedTask(task);
-    };
-
-    const handleDragOver = (e: React.DragEvent) => {
-        e.preventDefault();
-    };
-
-    const handleDrop = (status: TaskStatus) => {
-        if (draggedTask && draggedTask.status !== status) {
-            handleStatusChange(draggedTask.id, status);
-        }
-        setDraggedTask(null);
-    };
+    // Progress %
+    const progress = tasks.length > 0 ? Math.round((counts.done / tasks.length) * 100) : 0;
 
     return (
-        <div className="h-[calc(100vh-120px)] flex flex-col">
+        <div className="h-[calc(100vh-120px)] flex flex-col gap-5">
             {/* Header */}
-            <div className="flex items-center justify-between mb-6">
+            <div className="flex items-center justify-between">
                 <div>
-                    <h1 className="text-2xl font-bold tracking-tight">Tâches</h1>
-                    <p className="text-muted-foreground text-sm">
-                        {myTasksCount} tâche{myTasksCount > 1 ? 's' : ''} assignée{myTasksCount > 1 ? 's' : ''}
-                        {urgentCount > 0 && <span className="text-red-500"> • {urgentCount} urgente{urgentCount > 1 ? 's' : ''}</span>}
+                    <h1 className="text-xl font-semibold tracking-tight">Tâches</h1>
+                    <p className="text-[13px] text-muted-foreground mt-0.5">
+                        {counts.total} active{counts.total !== 1 ? 's' : ''} · {progress}% complété
                     </p>
                 </div>
-                <Button onClick={() => openTaskModal()}>
+                <button
+                    onClick={() => openTaskModal()}
+                    className="inline-flex items-center gap-1.5 px-3.5 py-2 text-sm font-medium rounded-lg bg-foreground text-background hover:opacity-90 transition-opacity shadow-sm"
+                >
                     <Plus className="h-4 w-4" />
                     Nouvelle tâche
-                </Button>
+                </button>
+            </div>
+
+            {/* Stats row */}
+            <div className="grid grid-cols-4 gap-3">
+                <StatCard icon={Target} label="Mes tâches" value={counts.mine} accent="blue" />
+                <StatCard icon={Flame} label="Urgentes" value={counts.urgent} accent="red" />
+                <StatCard icon={AlertTriangle} label="En retard" value={counts.overdue} accent="amber" />
+                <StatCard icon={TrendingUp} label="Terminées" value={counts.done} accent="emerald" />
             </div>
 
             {/* Toolbar */}
-            <div className="flex items-center gap-3 mb-6">
-                {/* Search */}
-                <div className="relative flex-1 max-w-sm">
-                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                    <Input
-                        type="text"
-                        value={searchQuery}
-                        onChange={e => setSearchQuery(e.target.value)}
-                        placeholder="Rechercher..."
-                        className="pl-9"
-                    />
+            <div className="flex items-center gap-2">
+                <div className="flex items-center gap-0.5 bg-muted/50 rounded-lg p-0.5">
+                    {([
+                        { id: 'all' as FilterMode, label: 'Toutes' },
+                        { id: 'mine' as FilterMode, label: 'Assignées' },
+                        { id: 'urgent' as FilterMode, label: 'Urgentes' },
+                        { id: 'overdue' as FilterMode, label: 'En retard' },
+                    ]).map(f => (
+                        <button
+                            key={f.id}
+                            onClick={() => setFilter(f.id)}
+                            className={cn(
+                                "px-3 py-1.5 rounded-md text-[12px] font-medium transition-all",
+                                filter === f.id ? "bg-background shadow-sm text-foreground" : "text-muted-foreground hover:text-foreground"
+                            )}
+                        >
+                            {f.label}
+                        </button>
+                    ))}
                 </div>
-
-                {/* Filter: My tasks */}
-                <Button
-                    variant={showOnlyMine ? "default" : "outline"}
-                    onClick={() => setShowOnlyMine(!showOnlyMine)}
-                    className="gap-2"
-                >
-                    <Sparkles className="h-4 w-4" />
-                    Mes tâches
-                    {showOnlyMine && myTasksCount > 0 && (
-                        <Badge variant="secondary" className="ml-1">{myTasksCount}</Badge>
-                    )}
-                </Button>
 
                 <div className="flex-1" />
 
-                {/* View toggle */}
-                <div className="flex items-center gap-1 p-1 bg-muted rounded-lg">
-                    <Button
-                        variant={viewMode === 'kanban' ? "default" : "ghost"}
-                        size="sm"
-                        onClick={() => setViewMode('kanban')}
-                        className="gap-2"
-                    >
-                        <LayoutGrid className="h-4 w-4" />
-                        Kanban
-                    </Button>
-                    <Button
-                        variant={viewMode === 'list' ? "default" : "ghost"}
-                        size="sm"
-                        onClick={() => setViewMode('list')}
-                        className="gap-2"
-                    >
-                        <List className="h-4 w-4" />
-                        Liste
-                    </Button>
+                <div className="relative w-52">
+                    <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground/50" />
+                    <input
+                        value={search}
+                        onChange={e => setSearch(e.target.value)}
+                        placeholder="Rechercher..."
+                        className="w-full h-8 pl-8 pr-7 text-[13px] rounded-lg border border-border/60 bg-transparent placeholder:text-muted-foreground/40 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary/40 transition-all"
+                    />
+                    {search && <button onClick={() => setSearch('')} className="absolute right-2 top-1/2 -translate-y-1/2"><X className="h-3 w-3 text-muted-foreground/50 hover:text-foreground" /></button>}
                 </div>
-            </div>
 
-            {/* Content */}
-            {viewMode === 'kanban' ? (
-                <KanbanView
-                    tasksByStatus={tasksByStatus}
-                    currentUserId={currentUser?.id}
-                    onStatusChange={handleStatusChange}
-                    onDelete={handleDelete}
-                    onNavigate={navigate}
-                    onSelect={setSelectedTask}
-                    onDragStart={handleDragStart}
-                    onDragOver={handleDragOver}
-                    onDrop={handleDrop}
-                    draggedTask={draggedTask}
-                />
-            ) : (
-                <ListView
-                    tasks={filteredTasks}
-                    currentUserId={currentUser?.id}
-                    onStatusChange={handleStatusChange}
-                    onDelete={handleDelete}
-                    onNavigate={navigate}
-                    onSelect={setSelectedTask}
-                />
-            )}
-
-            {/* Task Detail Modal */}
-            {selectedTask && (
-                <TaskDetailModal
-                    task={selectedTask}
-                    onClose={() => setSelectedTask(null)}
-                    onStatusChange={(id, status) => { handleStatusChange(id, status); setSelectedTask(null); }}
-                    onDelete={(id) => { handleDelete(id); setSelectedTask(null); }}
-                />
-            )}
-        </div>
-    );
-};
-
-// Kanban View
-const KanbanView: React.FC<{
-    tasksByStatus: Record<TaskStatus, Task[]>;
-    currentUserId?: string;
-    onStatusChange: (id: string, status: TaskStatus) => void;
-    onDelete: (id: string) => void;
-    onNavigate: (path: string) => void;
-    onSelect: (task: Task) => void;
-    onDragStart: (task: Task) => void;
-    onDragOver: (e: React.DragEvent) => void;
-    onDrop: (status: TaskStatus) => void;
-    draggedTask: Task | null;
-}> = ({ tasksByStatus, currentUserId, onStatusChange, onDelete, onNavigate, onSelect, onDragStart, onDragOver, onDrop, draggedTask }) => {
-    return (
-        <div className="flex-1 grid grid-cols-3 gap-4 min-h-0">
-            {COLUMNS.map(column => {
-                const tasks = tasksByStatus[column.id];
-                const Icon = column.icon;
-                
-                return (
-                    <div
-                        key={column.id}
-                        className={cn(
-                            "flex flex-col bg-muted/30 rounded-xl border-2 border-transparent transition-colors overflow-hidden",
-                            draggedTask && draggedTask.status !== column.id && "border-dashed border-primary/30"
-                        )}
-                        onDragOver={onDragOver}
-                        onDrop={() => onDrop(column.id)}
-                    >
-                        {/* Column Header */}
-                        <div className="flex items-center gap-2 p-4 border-b border-border/50 shrink-0">
-                            <Icon className={cn("h-5 w-5", column.color)} />
-                            <h3 className="font-semibold">{column.title}</h3>
-                            <Badge variant="outline" className="ml-auto">
-                                {tasks.length}
-                            </Badge>
-                        </div>
-
-                        {/* Tasks */}
-                        <ScrollArea className="flex-1">
-                            <div className="p-3 space-y-3">
-                                {tasks.length === 0 ? (
-                                    <div className="text-center py-8 text-muted-foreground">
-                                        <Icon className="h-8 w-8 mx-auto mb-2 opacity-30" />
-                                        <p className="text-sm">Aucune tâche</p>
-                                    </div>
-                                ) : (
-                                    tasks.map(task => {
-                                        const assigned = Array.isArray(task.assignedTo) ? task.assignedTo : [task.assignedTo];
-                                        return (
-                                            <TaskCard
-                                                key={task.id}
-                                                task={task}
-                                                isOwn={currentUserId ? assigned.includes(currentUserId) : false}
-                                                onStatusChange={onStatusChange}
-                                                onDelete={onDelete}
-                                                onNavigate={onNavigate}
-                                                onSelect={onSelect}
-                                                onDragStart={onDragStart}
-                                                viewMode="kanban"
-                                            />
-                                        );
-                                    })
-                                )}
-                            </div>
-                        </ScrollArea>
-                    </div>
-                );
-            })}
-        </div>
-    );
-};
-
-// List View
-const ListView: React.FC<{
-    tasks: Task[];
-    currentUserId?: string;
-    onStatusChange: (id: string, status: TaskStatus) => void;
-    onDelete: (id: string) => void;
-    onNavigate: (path: string) => void;
-    onSelect: (task: Task) => void;
-}> = ({ tasks, currentUserId, onStatusChange, onDelete, onNavigate, onSelect }) => {
-    // Sort: own tasks first, then by priority, then by status
-    const sortedTasks = [...tasks].sort((a, b) => {
-        // Own tasks first (handle legacy string format)
-        const aAssigned = Array.isArray(a.assignedTo) ? a.assignedTo : [a.assignedTo];
-        const bAssigned = Array.isArray(b.assignedTo) ? b.assignedTo : [b.assignedTo];
-        const aIsOwn = currentUserId && aAssigned.includes(currentUserId) ? 0 : 1;
-        const bIsOwn = currentUserId && bAssigned.includes(currentUserId) ? 0 : 1;
-        if (aIsOwn !== bIsOwn) return aIsOwn - bIsOwn;
-        
-        // Then by status (pending first)
-        const statusOrder = { pending: 0, in_progress: 1, completed: 2 };
-        if (statusOrder[a.status] !== statusOrder[b.status]) {
-            return statusOrder[a.status] - statusOrder[b.status];
-        }
-        
-        // Then by priority
-        const priorityOrder = { high: 0, medium: 1, low: 2 };
-        return priorityOrder[a.priority] - priorityOrder[b.priority];
-    });
-
-    return (
-        <Card className="flex-1 overflow-hidden">
-            <ScrollArea className="h-full">
-                <div className="divide-y divide-border">
-                    {sortedTasks.length === 0 ? (
-                        <div className="text-center py-16">
-                            <CheckCircle2 className="h-12 w-12 text-muted-foreground/30 mx-auto mb-3" />
-                            <h3 className="font-medium mb-1">Aucune tâche</h3>
-                            <p className="text-sm text-muted-foreground">
-                                Créez une nouvelle tâche pour commencer
-                            </p>
-                        </div>
-                    ) : (
-                        sortedTasks.map(task => {
-                            const assigned = Array.isArray(task.assignedTo) ? task.assignedTo : [task.assignedTo];
-                            return (
-                                <TaskCard
-                                    key={task.id}
-                                    task={task}
-                                    isOwn={currentUserId ? assigned.includes(currentUserId) : false}
-                                    onStatusChange={onStatusChange}
-                                    onDelete={onDelete}
-                                    onNavigate={onNavigate}
-                                    onSelect={onSelect}
-                                    viewMode="list"
-                                />
-                            );
-                        })
-                    )}
-                </div>
-            </ScrollArea>
-        </Card>
-    );
-};
-
-// Contributors Avatars Component
-const ContributorsAvatars: React.FC<{
-    assignedTo: string[] | string;
-    size?: 'sm' | 'md';
-}> = ({ assignedTo, size = 'sm' }) => {
-    // Handle legacy string format
-    const assignedArray = Array.isArray(assignedTo) ? assignedTo : [assignedTo];
-    const contributors = assignedArray
-        .map(id => LEXIA_TEAM.find(m => m.id === id))
-        .filter(Boolean);
-    
-    const sizeClasses = size === 'sm' ? 'h-6 w-6 text-[10px]' : 'h-8 w-8 text-xs';
-    const overlapClasses = size === 'sm' ? '-ml-2' : '-ml-3';
-    
-    if (contributors.length === 0) return null;
-    
-    return (
-        <div className="flex items-center">
-            {contributors.slice(0, 3).map((member, index) => (
-                <Avatar 
-                    key={member!.id} 
-                    className={cn(
-                        sizeClasses,
-                        "ring-2 ring-background",
-                        index > 0 && overlapClasses
-                    )}
-                    title={member!.name}
-                >
-                    {member!.avatarUrl && <AvatarImage src={member!.avatarUrl} />}
-                    <AvatarFallback className={size === 'sm' ? 'text-[10px]' : 'text-xs'}>
-                        {getInitials(member!.name)}
-                    </AvatarFallback>
-                </Avatar>
-            ))}
-            {contributors.length > 3 && (
-                <div className={cn(
-                    sizeClasses,
-                    overlapClasses,
-                    "rounded-full bg-muted flex items-center justify-center ring-2 ring-background font-medium"
-                )}>
-                    +{contributors.length - 3}
-                </div>
-            )}
-            {contributors.length > 1 && (
-                <Users className={cn(
-                    "text-muted-foreground ml-1",
-                    size === 'sm' ? 'h-3 w-3' : 'h-4 w-4'
-                )} />
-            )}
-        </div>
-    );
-};
-
-// Task Card Component
-const TaskCard: React.FC<{
-    task: Task;
-    isOwn: boolean;
-    onStatusChange: (id: string, status: TaskStatus) => void;
-    onDelete: (id: string) => void;
-    onNavigate: (path: string) => void;
-    onSelect?: (task: Task) => void;
-    onDragStart?: (task: Task) => void;
-    viewMode: 'kanban' | 'list';
-}> = ({ task, isOwn, onStatusChange, onDelete, onNavigate, onSelect, onDragStart, viewMode }) => {
-    const [showActions, setShowActions] = useState(false);
-    const isCompleted = task.status === 'completed';
-    const isOverdue = task.dueDate && new Date(task.dueDate) < new Date() && !isCompleted;
-    // Handle legacy string format
-    const assignedArray = Array.isArray(task.assignedTo) ? task.assignedTo : [task.assignedTo];
-    const hasMultipleContributors = assignedArray.length > 1;
-    
-    const formatDueDate = (date: string) => {
-        const d = new Date(date);
-        const now = new Date();
-        const diff = d.getTime() - now.getTime();
-        const days = Math.ceil(diff / (1000 * 60 * 60 * 24));
-        
-        if (days < 0) return `${Math.abs(days)}j de retard`;
-        if (days === 0) return "Aujourd'hui";
-        if (days === 1) return "Demain";
-        return d.toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' });
-    };
-
-    const nextStatus: Record<TaskStatus, TaskStatus> = {
-        pending: 'in_progress',
-        in_progress: 'completed',
-        completed: 'pending'
-    };
-
-    if (viewMode === 'kanban') {
-        return (
-            <Card
-                draggable
-                onDragStart={() => onDragStart?.(task)}
-                className={cn(
-                    "cursor-grab active:cursor-grabbing transition-all hover:shadow-md",
-                    isOwn && "ring-2 ring-primary/40 bg-primary/5",
-                    isCompleted && "opacity-60"
-                )}
-                onMouseEnter={() => setShowActions(true)}
-                onMouseLeave={() => setShowActions(false)}
-            >
-                <CardContent className="p-3">
-                    {/* Header */}
-                    <div className="flex items-start gap-2 mb-2">
-                        <button
-                            onClick={() => onStatusChange(task.id, nextStatus[task.status])}
-                            className={cn(
-                                "mt-0.5 h-5 w-5 rounded-full border-2 shrink-0 flex items-center justify-center transition-colors",
-                                isCompleted
-                                    ? "bg-green-500 border-green-500 text-white"
-                                    : task.priority === 'high'
-                                    ? "border-red-500 hover:bg-red-500/10"
-                                    : "border-muted-foreground/30 hover:border-primary"
-                            )}
-                        >
-                            {isCompleted && <CheckCircle2 className="h-3 w-3" />}
-                        </button>
-                        <div className="flex-1 min-w-0" onClick={() => onSelect?.(task)}>
-                            <p className={cn(
-                                "font-medium text-sm leading-tight line-clamp-2 cursor-pointer hover:text-primary transition-colors",
-                                isCompleted && "line-through text-muted-foreground"
+                <div className="flex items-center bg-muted/50 rounded-lg p-0.5">
+                    {(['kanban', 'list'] as ViewMode[]).map(v => (
+                        <button key={v} onClick={() => setView(v)}
+                            className={cn("h-8 px-3 flex items-center gap-1.5 rounded-md text-[12px] font-medium transition-all",
+                                view === v ? "bg-background shadow-sm text-foreground" : "text-muted-foreground hover:text-foreground"
                             )}>
-                                {task.title}
-                            </p>
-                        </div>
-                        {showActions && (
-                            <Button
-                                variant="ghost"
-                                size="icon"
-                                className="h-6 w-6 -mr-1 -mt-0.5 text-muted-foreground hover:text-red-500 shrink-0"
-                                onClick={() => onDelete(task.id)}
-                            >
-                                <Trash2 className="h-3.5 w-3.5" />
-                            </Button>
-                        )}
-                    </div>
-
-                    {/* Tags */}
-                    <div className="flex flex-wrap gap-1 mb-2">
-                        {isOwn && (
-                            <Badge variant="default" className="text-[10px] px-1.5 py-0 h-5 gap-1">
-                                <Sparkles className="h-3 w-3" />
-                                {hasMultipleContributors ? 'Partagée' : 'Ma tâche'}
-                            </Badge>
-                        )}
-                        {task.priority === 'high' && !isCompleted && (
-                            <Badge variant="destructive" className="text-[10px] px-1.5 py-0 h-5">
-                                Urgent
-                            </Badge>
-                        )}
-                        {isOverdue && (
-                            <Badge variant="destructive" className="text-[10px] px-1.5 py-0 h-5 gap-1">
-                                <AlertCircle className="h-3 w-3" />
-                                Retard
-                            </Badge>
-                        )}
-                    </div>
-
-                    {/* Meta */}
-                    <div className="flex items-center justify-between text-xs text-muted-foreground">
-                        <div className="flex items-center gap-2 min-w-0 flex-1">
-                            {task.companyName && (
-                                <button 
-                                    onClick={() => task.companyId && onNavigate(`/company/${task.companyId}`)}
-                                    className="flex items-center gap-1 hover:text-foreground transition-colors truncate"
-                                >
-                                    <Building2 className="h-3 w-3 shrink-0" />
-                                    <span className="truncate">{task.companyName}</span>
-                                </button>
-                            )}
-                            {task.dueDate && (
-                                <span className={cn(
-                                    "flex items-center gap-1 shrink-0",
-                                    isOverdue && "text-red-500"
-                                )}>
-                                    <Calendar className="h-3 w-3" />
-                                    {formatDueDate(task.dueDate)}
-                                </span>
-                            )}
-                        </div>
-                        <ContributorsAvatars assignedTo={assignedArray} size="sm" />
-                    </div>
-                </CardContent>
-            </Card>
-        );
-    }
-
-    // List view
-    return (
-        <div
-            className={cn(
-                "flex items-center gap-4 p-4 transition-colors hover:bg-muted/50 group",
-                isOwn && "bg-primary/5 border-l-4 border-l-primary"
-            )}
-            onMouseEnter={() => setShowActions(true)}
-            onMouseLeave={() => setShowActions(false)}
-        >
-            {/* Checkbox */}
-            <button
-                onClick={() => onStatusChange(task.id, nextStatus[task.status])}
-                className={cn(
-                    "h-6 w-6 rounded-full border-2 shrink-0 flex items-center justify-center transition-all",
-                    isCompleted
-                        ? "bg-green-500 border-green-500 text-white"
-                        : task.status === 'in_progress'
-                        ? "border-blue-500 bg-blue-500/10"
-                        : task.priority === 'high'
-                        ? "border-red-500 hover:bg-red-500/10"
-                        : "border-muted-foreground/30 hover:border-primary"
-                )}
-            >
-                {isCompleted && <CheckCircle2 className="h-4 w-4" />}
-                {task.status === 'in_progress' && <Clock className="h-3 w-3 text-blue-500" />}
-            </button>
+                            {v === 'list' ? <List className="h-3.5 w-3.5" /> : <LayoutGrid className="h-3.5 w-3.5" />}
+                            {v === 'kanban' ? 'Kanban' : 'Liste'}
+                        </button>
+                    ))}
+                </div>
+            </div>
 
             {/* Content */}
-            <div className="flex-1 min-w-0 cursor-pointer" onClick={() => onSelect?.(task)}>
-                <div className="flex items-center gap-2 mb-0.5">
-                    <p className={cn(
-                        "font-medium truncate hover:text-primary transition-colors",
-                        isCompleted && "line-through text-muted-foreground"
-                    )}>
-                        {task.title}
-                    </p>
-                    {isOwn && !isCompleted && (
-                        <Badge variant="default" className="text-[10px] px-1.5 py-0 h-5 gap-1 shrink-0">
-                            <Sparkles className="h-3 w-3" />
-                            {hasMultipleContributors ? 'Partagée' : 'Vous'}
-                        </Badge>
-                    )}
-                    {task.priority === 'high' && !isCompleted && (
-                        <Badge variant="destructive" className="text-[10px] px-1.5 py-0 h-5 shrink-0">
-                            Urgent
-                        </Badge>
-                    )}
-                </div>
-                <div className="flex items-center gap-3 text-sm text-muted-foreground">
-                    {task.companyName && (
-                        <button 
-                            onClick={() => task.companyId && onNavigate(`/company/${task.companyId}`)}
-                            className="flex items-center gap-1 hover:text-foreground transition-colors"
-                        >
-                            <Building2 className="h-3.5 w-3.5" />
-                            {task.companyName}
-                        </button>
-                    )}
-                    {task.dueDate && (
-                        <span className={cn(
-                            "flex items-center gap-1",
-                            isOverdue && "text-red-500 font-medium"
-                        )}>
-                            <Calendar className="h-3.5 w-3.5" />
-                            {formatDueDate(task.dueDate)}
-                        </span>
-                    )}
-                </div>
-            </div>
-
-            {/* Status */}
-            <div className="flex items-center gap-2">
-                <select
-                    value={task.status}
-                    onChange={(e) => onStatusChange(task.id, e.target.value as TaskStatus)}
-                    className={cn(
-                        "px-3 py-1.5 text-xs font-medium rounded-lg border-0 cursor-pointer",
-                        task.status === 'pending' && "bg-slate-100 dark:bg-slate-800",
-                        task.status === 'in_progress' && "bg-blue-100 text-blue-700 dark:bg-blue-950 dark:text-blue-300",
-                        task.status === 'completed' && "bg-green-100 text-green-700 dark:bg-green-950 dark:text-green-300"
-                    )}
-                >
-                    <option value="pending">À faire</option>
-                    <option value="in_progress">En cours</option>
-                    <option value="completed">Terminée</option>
-                </select>
-            </div>
-
-            {/* Contributors */}
-            <ContributorsAvatars assignedTo={assignedArray} size="md" />
-
-            {/* Delete */}
-            <Button
-                variant="ghost"
-                size="icon"
-                className={cn(
-                    "h-8 w-8 text-muted-foreground hover:text-red-500 transition-opacity",
-                    showActions ? "opacity-100" : "opacity-0"
+            <div className="flex-1 min-h-0">
+                {view === 'list' ? (
+                    <TaskListView tasks={filtered} isMine={isMine} onStatus={changeStatus} onDelete={remove} onNav={navigate} onSelect={setSelectedTask} />
+                ) : (
+                    <KanbanView byStatus={byStatus} isMine={isMine} onStatus={changeStatus} onDelete={remove} onNav={navigate} onSelect={setSelectedTask}
+                        draggedTask={draggedTask} onDragStart={setDraggedTask} onDrop={(s) => { if (draggedTask && draggedTask.status !== s) changeStatus(draggedTask.id, s); setDraggedTask(null); }} />
                 )}
-                onClick={() => onDelete(task.id)}
-            >
-                <Trash2 className="h-4 w-4" />
-            </Button>
+            </div>
+
+            {selectedTask && (
+                <DetailPanel task={selectedTask} onClose={() => setSelectedTask(null)}
+                    onStatus={(id, s) => { changeStatus(id, s); setSelectedTask(null); }}
+                    onDelete={(id) => { remove(id); setSelectedTask(null); }} />
+            )}
         </div>
     );
 };
 
-// Render @mention-highlighted text
+/* ═══ Stat Card ═══ */
+const ACCENT: Record<string, { icon: string; bg: string; text: string; ring: string }> = {
+    blue: { icon: 'text-foreground/70', bg: 'bg-muted', text: 'text-foreground', ring: 'ring-border' },
+    red: { icon: 'text-foreground/70', bg: 'bg-muted', text: 'text-foreground', ring: 'ring-border' },
+    amber: { icon: 'text-foreground/60', bg: 'bg-muted', text: 'text-foreground', ring: 'ring-border' },
+    emerald: { icon: 'text-foreground/60', bg: 'bg-muted', text: 'text-foreground/70', ring: 'ring-border' },
+};
+
+const StatCard: React.FC<{ icon: React.ElementType; label: string; value: number; accent: string }> = ({ icon: Icon, label, value, accent }) => {
+    const a = ACCENT[accent];
+    return (
+        <div className={cn("flex items-center gap-3 rounded-lg border border-border/50 bg-card px-4 py-3 transition-all hover:shadow-sm")}>
+            <div className={cn("h-9 w-9 rounded-lg flex items-center justify-center", a.bg)}>
+                <Icon className={cn("h-[18px] w-[18px]", a.icon)} />
+            </div>
+            <div>
+                <p className={cn("text-xl font-bold leading-none tabular-nums", value > 0 ? a.text : "text-muted-foreground/40")}>{value}</p>
+                <p className="text-[11px] text-muted-foreground mt-0.5">{label}</p>
+            </div>
+        </div>
+    );
+};
+
+/* ═══ Status Dot ═══ */
+const StatusDot: React.FC<{ task: Task; size?: number; onChange: (id: string, s: TaskStatus) => void }> = ({ task, size = 18, onChange }) => (
+    <button
+        onClick={e => { e.stopPropagation(); onChange(task.id, NEXT_STATUS[task.status]); }}
+        style={{ width: size, height: size }}
+        className={cn(
+            "rounded-full border-[1.5px] flex items-center justify-center shrink-0 transition-all",
+            task.status === 'completed' ? "bg-foreground border-foreground" :
+            task.status === 'in_progress' ? "border-foreground/60 bg-foreground/10 hover:bg-foreground/15" :
+            "border-muted-foreground/30 hover:border-muted-foreground/50"
+        )}
+    >
+        {task.status === 'completed' && <CheckCircle2 className="text-background" style={{ width: size * 0.6, height: size * 0.6 }} />}
+        {task.status === 'in_progress' && <div className="rounded-full bg-foreground/60" style={{ width: size * 0.35, height: size * 0.35 }} />}
+    </button>
+);
+
+/* ═══ Avatars ═══ */
+const Avatars: React.FC<{ ids: string[] | string; size?: 'sm' | 'md' }> = ({ ids, size = 'sm' }) => {
+    const arr = Array.isArray(ids) ? ids : [ids];
+    const members = arr.map(id => LEXIA_TEAM.find(m => m.id === id)).filter(Boolean);
+    if (!members.length) return null;
+    const sz = size === 'sm' ? 'h-6 w-6' : 'h-7 w-7';
+    return (
+        <div className="flex -space-x-1.5">
+            {members.slice(0, 3).map(m => (
+                <Tooltip key={m!.id} content={m!.name}>
+                    <Avatar className={cn(sz, "ring-2 ring-background")}>
+                        {m!.avatarUrl && <AvatarImage src={m!.avatarUrl} />}
+                        <AvatarFallback className="text-[8px] font-medium bg-muted">{getInitials(m!.name)}</AvatarFallback>
+                    </Avatar>
+                </Tooltip>
+            ))}
+            {members.length > 3 && <span className={cn(sz, "rounded-full bg-muted ring-2 ring-background flex items-center justify-center text-[8px] font-medium text-muted-foreground")}>+{members.length - 3}</span>}
+        </div>
+    );
+};
+
+/* ═══ Status Pill (for list view) ═══ */
+const StatusPill: React.FC<{ status: TaskStatus; onChange: (s: TaskStatus) => void }> = ({ status, onChange }) => (
+    <select
+        value={status}
+        onChange={e => onChange(e.target.value as TaskStatus)}
+        className={cn(
+            "px-2.5 py-1 text-[11px] font-medium rounded-full border border-border/60 cursor-pointer appearance-none text-center transition-colors bg-background",
+            status === 'completed' ? "text-muted-foreground" :
+            status === 'in_progress' ? "text-foreground" :
+            "text-muted-foreground"
+        )}
+    >
+        <option value="pending">À faire</option>
+        <option value="in_progress">En cours</option>
+        <option value="completed">Terminée</option>
+    </select>
+);
+
+/* ═══ Priority Indicator ═══ */
+const PriorityDot: React.FC<{ p: string; showLabel?: boolean }> = ({ p, showLabel }) => {
+    if (p === 'high') return (
+        <span className="inline-flex items-center gap-1">
+            <span className="h-2 w-2 rounded-full bg-foreground ring-2 ring-foreground/10" />
+            {showLabel && <span className="text-[11px] font-medium text-foreground">Haute</span>}
+        </span>
+    );
+    if (p === 'medium') return (
+        <span className="inline-flex items-center gap-1">
+            <span className="h-2 w-2 rounded-full bg-foreground/50 ring-2 ring-foreground/5" />
+            {showLabel && <span className="text-[11px] text-muted-foreground">Moyenne</span>}
+        </span>
+    );
+    return (
+        <span className="inline-flex items-center gap-1">
+            <span className="h-2 w-2 rounded-full bg-muted-foreground/30" />
+            {showLabel && <span className="text-[11px] text-muted-foreground/60">Basse</span>}
+        </span>
+    );
+};
+
+/* ═══════════════════════════════════════════════════
+   LIST VIEW
+   ═══════════════════════════════════════════════════ */
+const TaskListView: React.FC<{
+    tasks: Task[]; isMine: (t: Task) => boolean;
+    onStatus: (id: string, s: TaskStatus) => void; onDelete: (id: string) => void;
+    onNav: (p: string) => void; onSelect: (t: Task) => void;
+}> = ({ tasks, isMine, onStatus, onDelete, onNav, onSelect }) => {
+    const sorted = useMemo(() => [...tasks].sort((a, b) => {
+        const so: Record<string, number> = { pending: 0, in_progress: 1, completed: 2 };
+        const po: Record<string, number> = { high: 0, medium: 1, low: 2 };
+        const am = isMine(a) ? 0 : 1, bm = isMine(b) ? 0 : 1;
+        if (am !== bm) return am - bm;
+        if (so[a.status] !== so[b.status]) return so[a.status] - so[b.status];
+        return po[a.priority] - po[b.priority];
+    }), [tasks]);
+
+    if (!sorted.length) return (
+        <div className="h-full flex items-center justify-center"><p className="text-sm text-muted-foreground/40">Aucune tâche</p></div>
+    );
+
+    return (
+        <div className="h-full rounded-lg border border-border/50 overflow-hidden flex flex-col bg-card">
+            <div className="grid grid-cols-[20px_1fr_130px_110px_80px_90px_60px_32px] gap-3 items-center px-4 py-2.5 border-b border-border/40 bg-muted/30 text-[11px] text-muted-foreground/60 font-medium uppercase tracking-wider select-none">
+                <div /><div>Titre</div><div>Entreprise</div><div>Échéance</div><div>Priorité</div><div>Statut</div><div>Qui</div><div />
+            </div>
+            <ScrollArea className="flex-1">
+                {sorted.map(task => {
+                    const due = task.dueDate ? dueDateInfo(task.dueDate) : null;
+                    const done = task.status === 'completed';
+                    return (
+                        <div key={task.id}
+                            className={cn(
+                                "grid grid-cols-[20px_1fr_130px_110px_80px_90px_60px_32px] gap-3 items-center px-4 py-2.5 border-b border-border/20 transition-colors hover:bg-muted/20 group",
+                                done && "opacity-40"
+                            )}>
+                            <StatusDot task={task} onChange={onStatus} />
+
+                            <div className="min-w-0 cursor-pointer" onClick={() => onSelect(task)}>
+                                <p className={cn("text-[13px] truncate font-medium", done ? "line-through text-muted-foreground" : "text-foreground hover:text-primary transition-colors")}>
+                                    {task.title}
+                                </p>
+                                {task.description && <p className="text-[11px] text-muted-foreground/50 truncate">{task.description}</p>}
+                            </div>
+
+                            <div className="min-w-0">
+                                {task.companyName ? (
+                                    <button onClick={() => task.companyId && onNav(`/company/${task.companyId}`)}
+                                        className="text-[12px] text-muted-foreground hover:text-foreground transition-colors truncate flex items-center gap-1.5">
+                                        <Building2 className="h-3 w-3 shrink-0 opacity-40" /><span className="truncate">{task.companyName}</span>
+                                    </button>
+                                ) : <span className="text-[12px] text-muted-foreground/20">—</span>}
+                            </div>
+
+                            <div>
+                                {due ? (
+                                    <span className={cn("text-[12px] flex items-center gap-1.5",
+                                        due.overdue ? "text-foreground font-semibold" : due.today ? "text-foreground font-medium" : "text-muted-foreground"
+                                    )}>
+                                        <Calendar className="h-3 w-3 shrink-0 opacity-40" />{due.text}
+                                    </span>
+                                ) : <span className="text-[12px] text-muted-foreground/20">—</span>}
+                            </div>
+
+                            <PriorityDot p={task.priority} showLabel />
+
+                            <StatusPill status={task.status} onChange={s => onStatus(task.id, s)} />
+
+                            <Avatars ids={task.assignedTo} />
+
+                            <button onClick={() => onDelete(task.id)}
+                                className="h-6 w-6 rounded flex items-center justify-center opacity-0 group-hover:opacity-100 text-muted-foreground/30 hover:text-destructive transition-all">
+                                <Trash2 className="h-3 w-3" />
+                            </button>
+                        </div>
+                    );
+                })}
+            </ScrollArea>
+        </div>
+    );
+};
+
+/* ═══════════════════════════════════════════════════
+   KANBAN VIEW
+   ═══════════════════════════════════════════════════ */
+const COLS: { id: TaskStatus; label: string; accent: string; iconBg: string; icon: React.ElementType }[] = [
+    { id: 'pending', label: 'À faire', accent: 'border-t-muted-foreground/30', iconBg: 'bg-muted', icon: Circle },
+    { id: 'in_progress', label: 'En cours', accent: 'border-t-foreground/50', iconBg: 'bg-muted', icon: Clock },
+    { id: 'completed', label: 'Terminée', accent: 'border-t-foreground', iconBg: 'bg-muted', icon: CheckCircle2 },
+];
+
+const KanbanView: React.FC<{
+    byStatus: Record<TaskStatus, Task[]>; isMine: (t: Task) => boolean;
+    onStatus: (id: string, s: TaskStatus) => void; onDelete: (id: string) => void;
+    onNav: (p: string) => void; onSelect: (t: Task) => void;
+    draggedTask: Task | null; onDragStart: (t: Task) => void; onDrop: (s: TaskStatus) => void;
+}> = ({ byStatus, isMine, onStatus, onDelete, onNav, onSelect, draggedTask, onDragStart, onDrop }) => (
+    <div className="h-full grid grid-cols-3 gap-4">
+        {COLS.map(col => {
+            const ColIcon = col.icon;
+            return (
+                <div key={col.id}
+                    className={cn(
+                        "flex flex-col rounded-lg border border-border/40 bg-muted/10 overflow-hidden border-t-[3px] transition-all",
+                        col.accent,
+                        draggedTask && draggedTask.status !== col.id && "ring-2 ring-dashed ring-primary/20 bg-primary/[0.01]"
+                    )}
+                    onDragOver={e => e.preventDefault()} onDrop={() => onDrop(col.id)}>
+
+                    <div className="flex items-center gap-2.5 px-3.5 py-3 border-b border-border/30 select-none">
+                        <div className={cn("h-6 w-6 rounded-md flex items-center justify-center", col.iconBg)}>
+                            <ColIcon className="h-3.5 w-3.5 text-foreground/60" />
+                        </div>
+                        <span className="text-[13px] font-semibold">{col.label}</span>
+                        <span className="ml-auto text-[12px] font-medium text-muted-foreground/50 bg-muted/60 px-2 py-0.5 rounded-full">{byStatus[col.id].length}</span>
+                    </div>
+
+                    <ScrollArea className="flex-1">
+                        <div className="p-2 space-y-2">
+                            {byStatus[col.id].length === 0 ? (
+                                <div className="py-12 text-center">
+                                    <ColIcon className="h-8 w-8 mx-auto mb-2 text-muted-foreground/15" />
+                                    <p className="text-[12px] text-muted-foreground/30">Aucune tâche</p>
+                                </div>
+                            ) : byStatus[col.id].map(task => {
+                                const due = task.dueDate ? dueDateInfo(task.dueDate) : null;
+                                const done = task.status === 'completed';
+                                const mine = isMine(task);
+                                return (
+                                    <div key={task.id} draggable onDragStart={() => onDragStart(task)} onClick={() => onSelect(task)}
+                                        className={cn(
+                                            "rounded-lg border bg-card p-3 cursor-grab active:cursor-grabbing transition-all hover:shadow-sm hover:border-border group",
+                                            mine && !done ? "border-l-[3px] border-l-primary/60 border-t-border/40 border-r-border/40 border-b-border/40" : "border-border/40",
+                                            done && "opacity-45"
+                                        )}>
+                                        {/* Title row */}
+                                        <div className="flex items-start gap-2 mb-1.5">
+                                            <StatusDot task={task} onChange={onStatus} size={16} />
+                                            <p className={cn("text-[13px] font-medium leading-snug line-clamp-2 flex-1", done && "line-through text-muted-foreground")}>
+                                                {task.title}
+                                            </p>
+                                            <button onClick={e => { e.stopPropagation(); onDelete(task.id); }}
+                                                className="h-5 w-5 rounded flex items-center justify-center opacity-0 group-hover:opacity-100 text-muted-foreground/30 hover:text-destructive transition-all shrink-0">
+                                                <Trash2 className="h-2.5 w-2.5" />
+                                            </button>
+                                        </div>
+
+                                        {/* Tags */}
+                                        {(!done && (task.priority === 'high' || (due && due.overdue))) && (
+                                            <div className="flex flex-wrap gap-1.5 mb-2 ml-6">
+                                                {task.priority === 'high' && (
+                                                    <span className="inline-flex items-center gap-1 text-[10px] font-medium px-2 py-0.5 rounded-full bg-foreground/8 text-foreground border border-border/60">
+                                                        <Flame className="h-2.5 w-2.5" />Haute priorité
+                                                    </span>
+                                                )}
+                                                {due && due.overdue && (
+                                                    <span className="inline-flex items-center gap-1 text-[10px] font-medium px-2 py-0.5 rounded-full bg-muted text-muted-foreground border border-border/60">
+                                                        <AlertTriangle className="h-2.5 w-2.5" />{due.text}
+                                                    </span>
+                                                )}
+                                            </div>
+                                        )}
+
+                                        {/* Footer */}
+                                        <div className="flex items-center justify-between mt-1 ml-6">
+                                            <div className="flex items-center gap-2.5 text-[11px] text-muted-foreground/50 min-w-0">
+                                                {task.companyName && (
+                                                    <button onClick={e => { e.stopPropagation(); task.companyId && onNav(`/company/${task.companyId}`); }}
+                                                        className="flex items-center gap-1 hover:text-foreground transition-colors truncate max-w-[120px]">
+                                                        <Building2 className="h-3 w-3 shrink-0" /><span className="truncate">{task.companyName}</span>
+                                                    </button>
+                                                )}
+                                                {due && !due.overdue && (
+                                                    <span className={cn("flex items-center gap-1 shrink-0", due.today && "text-foreground font-medium")}>
+                                                        <Calendar className="h-3 w-3" />{due.text}
+                                                    </span>
+                                                )}
+                                            </div>
+                                            <Avatars ids={task.assignedTo} />
+                                        </div>
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    </ScrollArea>
+                </div>
+            );
+        })}
+    </div>
+);
+
+/* ═══════════════════════════════════════════════════
+   DETAIL PANEL
+   ═══════════════════════════════════════════════════ */
 const renderMentionText = (text: string) => {
     const parts = text.split(/(@\w+)/g);
     return parts.map((part, i) => {
         if (part.startsWith('@')) {
             const name = part.slice(1);
             const member = LEXIA_TEAM.find(m => m.name.toLowerCase() === name.toLowerCase() || m.id.toLowerCase() === name.toLowerCase());
-            if (member) {
-                return (
-                    <span key={i} className="inline-flex items-center gap-0.5 px-1 py-0.5 rounded bg-primary/10 text-primary text-xs font-medium">
-                        {member.name}
-                    </span>
-                );
-            }
+            if (member) return <span key={i} className="px-1 py-0.5 rounded bg-muted text-foreground text-xs font-medium">{member.name}</span>;
         }
         return <span key={i}>{part}</span>;
     });
 };
 
-// Task Detail Modal with @mention Comments
-const TaskDetailModal: React.FC<{
-    task: Task;
-    onClose: () => void;
-    onStatusChange: (id: string, status: TaskStatus) => void;
-    onDelete: (id: string) => void;
-}> = ({ task, onClose, onStatusChange, onDelete }) => {
+const DetailPanel: React.FC<{
+    task: Task; onClose: () => void;
+    onStatus: (id: string, s: TaskStatus) => void; onDelete: (id: string) => void;
+}> = ({ task, onClose, onStatus, onDelete }) => {
     const [comments, setComments] = useState<TaskComment[]>([]);
-    const [commentText, setCommentText] = useState('');
-    const [commentMentions, setCommentMentions] = useState<string[]>([]);
-    const [loadingComments, setLoadingComments] = useState(true);
+    const [text, setText] = useState('');
+    const [mentions, setMentions] = useState<string[]>([]);
+    const [loading, setLoading] = useState(true);
 
-    useEffect(() => { loadComments(); }, [task.id]);
+    const [editTitle, setEditTitle] = useState(task.title);
+    const [editDesc, setEditDesc] = useState(task.description || '');
+    const [editDueDate, setEditDueDate] = useState(task.dueDate ? new Date(task.dueDate).toISOString().split('T')[0] : '');
+    const [editPriority, setEditPriority] = useState(task.priority);
+    const [dirty, setDirty] = useState(false);
 
-    const loadComments = async () => {
-        const c = await workspaceService.getTaskComments(task.id);
-        setComments(c);
-        setLoadingComments(false);
+    useEffect(() => {
+        setEditTitle(task.title);
+        setEditDesc(task.description || '');
+        setEditDueDate(task.dueDate ? new Date(task.dueDate).toISOString().split('T')[0] : '');
+        setEditPriority(task.priority);
+        setDirty(false);
+    }, [task.id]);
+
+    const markDirty = () => setDirty(true);
+
+    const saveEdits = async () => {
+        const updates: Partial<Task> = {};
+        if (editTitle !== task.title) updates.title = editTitle;
+        if (editDesc !== (task.description || '')) updates.description = editDesc;
+        if (editDueDate !== (task.dueDate ? new Date(task.dueDate).toISOString().split('T')[0] : '')) updates.dueDate = editDueDate || undefined;
+        if (editPriority !== task.priority) updates.priority = editPriority;
+        if (Object.keys(updates).length > 0) {
+            await workspaceService.updateTask(task.id, updates);
+            window.dispatchEvent(new Event('tasks-update'));
+        }
+        setDirty(false);
     };
 
-    const handleAddComment = async () => {
-        if (!commentText.trim()) return;
-        await workspaceService.addTaskComment(task.id, commentText.trim(), commentMentions);
-        setCommentText('');
-        setCommentMentions([]);
-        loadComments();
-    };
+    useEffect(() => { loadC(); }, [task.id]);
+    const loadC = async () => { setComments(await workspaceService.getTaskComments(task.id)); setLoading(false); };
+    const addComment = async () => { if (!text.trim()) return; await workspaceService.addTaskComment(task.id, text.trim(), mentions); setText(''); setMentions([]); loadC(); };
 
-    const assignedArray = Array.isArray(task.assignedTo) ? task.assignedTo : [task.assignedTo];
+    const assigned = Array.isArray(task.assignedTo) ? task.assignedTo : [task.assignedTo];
+    const members = assigned.map(id => LEXIA_TEAM.find(m => m.id === id)).filter(Boolean);
+    const due = editDueDate ? dueDateInfo(editDueDate) : null;
+    const done = task.status === 'completed';
 
     return (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm" onClick={onClose}>
-            <div className="bg-card border border-border rounded-xl shadow-xl w-full max-w-lg max-h-[85vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
-                <div className="p-5 border-b border-border">
-                    <div className="flex items-start justify-between mb-3">
-                        <h2 className="text-lg font-semibold pr-4">{task.title}</h2>
-                        <button onClick={onClose}><X className="h-5 w-5 text-muted-foreground" /></button>
+        <div className="fixed inset-0 z-50" onClick={onClose}>
+            <div className="absolute inset-0 bg-black/25 backdrop-blur-[2px]" />
+            <div className="absolute right-0 top-0 bottom-0 w-full max-w-md bg-background border-l border-border shadow-sm flex flex-col animate-in slide-in-from-right duration-200"
+                onClick={e => e.stopPropagation()}>
+
+                {/* Header */}
+                <div className="px-5 pt-5 pb-4 border-b border-border/50 shrink-0">
+                    <div className="flex items-start justify-between gap-3 mb-3">
+                        <div className="flex items-start gap-2.5 flex-1 min-w-0">
+                            <StatusDot task={task} onChange={onStatus} size={22} />
+                            <input
+                                value={editTitle}
+                                onChange={e => { setEditTitle(e.target.value); markDirty(); }}
+                                className={cn(
+                                    "text-[15px] font-semibold leading-snug bg-transparent border-0 outline-none w-full placeholder:text-muted-foreground/40 focus:ring-0",
+                                    done && "line-through text-muted-foreground"
+                                )}
+                                placeholder="Titre de la tâche"
+                            />
+                        </div>
+                        <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-muted transition-colors shrink-0">
+                            <X className="h-4 w-4 text-muted-foreground" />
+                        </button>
                     </div>
-                    {task.description && <p className="text-sm text-muted-foreground mb-3">{task.description}</p>}
-                    <div className="flex flex-wrap gap-2 text-xs">
-                        <span className={cn("px-2 py-1 rounded-full font-medium",
-                            task.priority === 'high' ? "bg-red-500/10 text-red-500" :
-                            task.priority === 'medium' ? "bg-orange-500/10 text-orange-500" :
-                            "bg-muted text-muted-foreground"
-                        )}>{task.priority}</span>
-                        <span className={cn("px-2 py-1 rounded-full font-medium",
-                            task.status === 'completed' ? "bg-green-500/10 text-green-500" :
-                            task.status === 'in_progress' ? "bg-blue-500/10 text-blue-500" :
-                            "bg-muted text-muted-foreground"
-                        )}>{task.status === 'pending' ? 'A faire' : task.status === 'in_progress' ? 'En cours' : 'Terminée'}</span>
-                        {task.companyName && <span className="px-2 py-1 rounded-full bg-muted text-muted-foreground">{task.companyName}</span>}
-                        {task.dueDate && <span className="px-2 py-1 rounded-full bg-muted text-muted-foreground flex items-center gap-1"><Calendar className="h-3 w-3" />{new Date(task.dueDate).toLocaleDateString('fr-FR')}</span>}
+                    <textarea
+                        value={editDesc}
+                        onChange={e => { setEditDesc(e.target.value); markDirty(); }}
+                        rows={2}
+                        className="text-[13px] text-muted-foreground leading-relaxed mb-4 ml-[32px] bg-transparent border-0 outline-none w-[calc(100%-32px)] resize-none placeholder:text-muted-foreground/30 focus:ring-0"
+                        placeholder="Ajouter une description…"
+                    />
+
+                    <div className="space-y-3 ml-[32px]">
+                        <PropRow label="Statut">
+                            <StatusPill status={task.status} onChange={s => onStatus(task.id, s)} />
+                        </PropRow>
+                        <PropRow label="Priorité">
+                            <select
+                                value={editPriority}
+                                onChange={e => { setEditPriority(e.target.value as Task['priority']); markDirty(); }}
+                                className="text-[13px] bg-transparent border border-border/60 rounded-full px-2.5 py-0.5 cursor-pointer appearance-none outline-none"
+                            >
+                                <option value="low">Basse</option>
+                                <option value="medium">Moyenne</option>
+                                <option value="high">Haute</option>
+                            </select>
+                        </PropRow>
+                        <PropRow label="Échéance">
+                            <input
+                                type="date"
+                                value={editDueDate}
+                                onChange={e => { setEditDueDate(e.target.value); markDirty(); }}
+                                className="text-[13px] bg-transparent border border-border/60 rounded-md px-2 py-0.5 outline-none focus:border-foreground/30 transition-colors"
+                            />
+                        </PropRow>
+                        {task.companyName && <PropRow label="Entreprise"><span className="text-[13px]">{task.companyName}</span></PropRow>}
+                        <PropRow label="Assignée">
+                            <div className="flex items-center gap-2">
+                                <Avatars ids={assigned} size="md" />
+                                <span className="text-[13px]">{members.map(m => m!.name).join(', ')}</span>
+                            </div>
+                        </PropRow>
                     </div>
-                    <div className="flex items-center gap-2 mt-3">
-                        <span className="text-xs text-muted-foreground">Assignée à:</span>
-                        <ContributorsAvatars assignedTo={assignedArray} />
-                    </div>
+
+                    {dirty && (
+                        <div className="mt-3 ml-[32px]">
+                            <button onClick={saveEdits}
+                                className="px-3 py-1.5 text-[12px] font-medium rounded-lg bg-foreground text-background hover:opacity-90 transition-opacity">
+                                Enregistrer les modifications
+                            </button>
+                        </div>
+                    )}
                 </div>
 
-                {/* Comments with @mentions */}
-                <div className="p-5">
+                {/* Comments */}
+                <div className="flex-1 overflow-y-auto px-5 py-4">
                     <div className="flex items-center gap-2 mb-3">
-                        <MessageCircle className="h-4 w-4 text-muted-foreground" />
-                        <h3 className="text-sm font-medium">Commentaires</h3>
-                        {comments.length > 0 && <span className="text-xs text-muted-foreground bg-muted px-1.5 py-0.5 rounded-full">{comments.length}</span>}
+                        <MessageCircle className="h-3.5 w-3.5 text-muted-foreground/40" />
+                        <span className="text-[13px] font-medium">Commentaires</span>
+                        {comments.length > 0 && <span className="text-[10px] text-muted-foreground/40 bg-muted px-1.5 py-0.5 rounded-full">{comments.length}</span>}
                     </div>
-
-                    {/* Comment input - chat style */}
                     <div className="mb-4">
-                        <MentionInput
-                            value={commentText}
-                            onChange={(text, mentions) => { setCommentText(text); setCommentMentions(mentions); }}
-                            onSubmit={handleAddComment}
-                            placeholder="Commenter... Entrée pour envoyer, @ pour mentionner"
-                            className="text-sm bg-muted/30"
-                        />
+                        <MentionInput value={text} onChange={(t, m) => { setText(t); setMentions(m); }} onSubmit={addComment}
+                            placeholder="Écrire un commentaire... @ pour mentionner" className="text-[13px]" />
                     </div>
-
-                    {loadingComments ? (
-                        <p className="text-sm text-muted-foreground text-center py-4">Chargement...</p>
-                    ) : comments.length === 0 ? (
-                        <p className="text-sm text-muted-foreground text-center py-4">Aucun commentaire encore</p>
-                    ) : (
+                    {loading ? <p className="text-[13px] text-muted-foreground/30 text-center py-6">Chargement...</p>
+                    : comments.length === 0 ? <p className="text-[13px] text-muted-foreground/25 text-center py-8">Pas encore de commentaire</p>
+                    : (
                         <div className="space-y-3">
                             {comments.map(c => {
                                 const member = LEXIA_TEAM.find(m => m.id === c.userId);
                                 return (
                                     <div key={c.id} className="flex gap-2.5">
-                                        <Avatar className="h-7 w-7 shrink-0 mt-0.5">
+                                        <Avatar className="h-6 w-6 shrink-0 mt-0.5">
                                             {(member?.avatarUrl || c.userAvatar) && <AvatarImage src={member?.avatarUrl || c.userAvatar} />}
-                                            <AvatarFallback className="text-[9px]">{getInitials(c.userName)}</AvatarFallback>
+                                            <AvatarFallback className="text-[8px]">{getInitials(c.userName)}</AvatarFallback>
                                         </Avatar>
-                                        <div className="flex-1 min-w-0">
+                                        <div className="flex-1 min-w-0 p-2.5 rounded-lg bg-muted/30 border border-border/20">
                                             <div className="flex items-center gap-1.5 mb-0.5">
-                                                <span className="text-xs font-semibold">{c.userName}</span>
-                                                <span className="text-[10px] text-muted-foreground">{formatRelativeTime(c.createdAt)}</span>
+                                                <span className="text-[12px] font-semibold">{c.userName}</span>
+                                                <span className="text-[10px] text-muted-foreground/40">{formatRelativeTime(c.createdAt)}</span>
                                             </div>
-                                            <div className="text-sm leading-relaxed whitespace-pre-wrap">{renderMentionText(c.content)}</div>
+                                            <div className="text-[13px] leading-relaxed whitespace-pre-wrap">{renderMentionText(c.content)}</div>
                                         </div>
                                     </div>
                                 );
@@ -788,12 +661,24 @@ const TaskDetailModal: React.FC<{
                     )}
                 </div>
 
-                {/* Actions */}
-                <div className="p-4 border-t border-border flex justify-between">
-                    <button onClick={() => { onDelete(task.id); onClose(); }} className="text-sm text-destructive hover:underline">Supprimer</button>
+                {/* Footer */}
+                <div className="px-5 py-3 border-t border-border/50 flex items-center justify-between shrink-0 bg-muted/10">
+                    <button onClick={() => { onDelete(task.id); onClose(); }}
+                        className="text-[12px] text-muted-foreground/40 hover:text-destructive transition-colors flex items-center gap-1">
+                        <Trash2 className="h-3 w-3" />Supprimer
+                    </button>
                     <div className="flex gap-2">
+                        {task.status === 'pending' && (
+                            <button onClick={() => onStatus(task.id, 'in_progress')}
+                                className="px-3.5 py-1.5 text-[12px] font-medium rounded-lg border border-border hover:bg-muted transition-colors">Commencer</button>
+                        )}
                         {task.status !== 'completed' && (
-                            <button onClick={() => onStatusChange(task.id, 'completed')} className="px-3 py-1.5 bg-green-500 text-white rounded-lg text-sm font-medium">Marquer terminée</button>
+                            <button onClick={() => onStatus(task.id, 'completed')}
+                                className="px-3.5 py-1.5 text-[12px] font-medium rounded-lg bg-foreground text-background hover:opacity-90 transition-opacity shadow-sm">Terminer</button>
+                        )}
+                        {task.status === 'completed' && (
+                            <button onClick={() => onStatus(task.id, 'pending')}
+                                className="px-3.5 py-1.5 text-[12px] font-medium rounded-lg border border-border hover:bg-muted transition-colors">Rouvrir</button>
                         )}
                     </div>
                 </div>
@@ -801,5 +686,12 @@ const TaskDetailModal: React.FC<{
         </div>
     );
 };
+
+const PropRow: React.FC<{ label: string; children: React.ReactNode }> = ({ label, children }) => (
+    <div className="flex items-center gap-3">
+        <span className="text-[12px] text-muted-foreground/50 w-20 shrink-0">{label}</span>
+        {children}
+    </div>
+);
 
 export default Tasks;

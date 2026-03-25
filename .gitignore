@@ -26,3 +26,7 @@ dist-ssr
 # Environment variables with secrets
 server/.env
 .env
+.vercel
+
+# Local Netlify folder
+.netlify

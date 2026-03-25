@@ -341,7 +341,7 @@ export const CatchUpWidget: React.FC<CatchUpWidgetProps> = ({ onClose, embedded 
                         {summary.wins.length > 0 && (
                             <div className="space-y-3">
                                 <div className="flex items-center gap-2">
-                                    <Trophy className="h-4 w-4 text-amber-500" />
+                                    <Trophy className="h-4 w-4 text-primary" />
                                     <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
                                         Succès & Avancées
                                     </h4>
@@ -349,7 +349,7 @@ export const CatchUpWidget: React.FC<CatchUpWidgetProps> = ({ onClose, embedded 
                                 <ul className="space-y-2">
                                     {summary.wins.map((win, i) => (
                                         <li key={i} className="flex gap-3 text-sm">
-                                            <div className="h-1.5 w-1.5 rounded-full bg-emerald-500 mt-2 shrink-0" />
+                                            <div className="h-1.5 w-1.5 rounded-full bg-primary mt-2 shrink-0" />
                                             <span>{win}</span>
                                         </li>
                                     ))}
@@ -381,7 +381,7 @@ export const CatchUpWidget: React.FC<CatchUpWidgetProps> = ({ onClose, embedded 
                         {summary.general.length > 0 && (
                             <div className="space-y-3">
                                 <div className="flex items-center gap-2">
-                                    <Info className="h-4 w-4 text-blue-500" />
+                                    <Info className="h-4 w-4 text-primary" />
                                     <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
                                         Résumé Global
                                     </h4>

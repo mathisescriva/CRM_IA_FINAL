@@ -3,7 +3,7 @@
  * Uses PostgreSQL via PostgREST with localStorage fallback
  */
 
-import { authService, LEXIA_TEAM } from './auth';
+import { authService, LEXIA_TEAM, resolveTeamAvatar } from './auth';
 import { companyService } from './supabase';
 import { Company, Deal, EmailTemplate, TaskComment, Project, ProjectDocument, ProjectMember, ProjectNote, ProjectStatus } from '../types';
 
@@ -106,12 +106,19 @@ let dbChecked = false;
 async function checkDB(): Promise<boolean> {
     if (dbChecked) return useDB;
     try {
-        const res = await fetch(`${API_URL}/tasks?limit=1`, { signal: AbortSignal.timeout(2000) });
+        const headers: Record<string, string> = {};
+        if (API_KEY) {
+            headers['apikey'] = API_KEY;
+            headers['Authorization'] = `Bearer ${API_KEY}`;
+        }
+        const res = await fetch(`${API_URL}/tasks?limit=1`, { headers, signal: AbortSignal.timeout(3000) });
         useDB = res.ok;
     } catch {
         useDB = false;
     }
     dbChecked = true;
+    // Auto-ensure users exist in DB on first connection (await to guarantee before any writes)
+    if (useDB) await ensureUserInDB();
     return useDB;
 }
 
@@ -130,6 +137,47 @@ const DB_ID_TO_APP: Record<string, string> = Object.fromEntries(
 
 function toDbUserId(appId: string): string { return USER_ID_MAP[appId] || appId; }
 function toAppUserId(dbId: string): string { return DB_ID_TO_APP[dbId] || dbId; }
+
+// Ensure all team users exist in the DB (check + insert on first DB access)
+let _userEnsured = false;
+async function ensureUserInDB(): Promise<void> {
+    if (_userEnsured) return;
+    const h: Record<string, string> = { 'Content-Type': 'application/json' };
+    if (API_KEY) { h['apikey'] = API_KEY; h['Authorization'] = `Bearer ${API_KEY}`; }
+
+    try {
+        for (const member of LEXIA_TEAM) {
+            const dbId = toDbUserId(member.id);
+            // Check if user exists
+            const check = await fetch(`${API_URL}/users?id=eq.${dbId}&select=id`, { headers: h });
+            const existing = check.ok ? await check.json() : [];
+            if (existing.length > 0) continue; // already exists
+
+            // Insert new user
+            const res = await fetch(`${API_URL}/users`, {
+                method: 'POST',
+                headers: { ...h, 'Prefer': 'return=representation' },
+                body: JSON.stringify({
+                    id: dbId,
+                    email: member.email,
+                    name: member.name,
+                    avatar_url: member.avatarUrl || null,
+                    role: member.role || 'User',
+                    last_login_date: new Date().toISOString(),
+                }),
+            });
+            if (!res.ok) {
+                console.warn(`[Workspace] Failed to insert user ${member.id}:`, await res.text());
+            } else {
+                console.log(`[Workspace] User ${member.name} created in DB`);
+            }
+        }
+        _userEnsured = true;
+        console.log('[Workspace] All team users ensured in DB');
+    } catch (e) {
+        console.warn('[Workspace] ensureUserInDB failed:', e);
+    }
+}
 
 // App: pending/in_progress/completed → DB: todo/in_progress/done
 function toDbStatus(status: string): string {
@@ -166,11 +214,13 @@ function mapDbTask(row: any, assignees: string[]): Task {
 }
 
 function mapDbActivity(row: any): TeamActivity {
+    const appUserId = toAppUserId(row.user_id || '');
     return {
         id: row.id,
-        userId: toAppUserId(row.user_id || ''),
+        userId: appUserId,
         userName: row.user_name,
-        userAvatar: row.user_avatar,
+        // Always resolve fresh avatar for team members
+        userAvatar: resolveTeamAvatar(appUserId) || row.user_avatar,
         action: row.action,
         targetType: row.target_type,
         targetId: row.target_id,
@@ -237,75 +287,70 @@ function mapDbTemplate(row: any): EmailTemplate {
     };
 }
 
-// Initialize localStorage demo data if no DB
+const DEMO_DATA_VERSION = 'v3';
 function initDemoData() {
+    if (localStorage.getItem('lexia_demo_version') !== DEMO_DATA_VERSION) {
+        localStorage.removeItem(TASKS_KEY);
+        localStorage.removeItem(ACTIVITY_KEY);
+        localStorage.removeItem(NOTIFICATIONS_KEY);
+        localStorage.removeItem(EVENTS_KEY);
+        localStorage.removeItem(DEALS_KEY);
+        localStorage.setItem('lexia_demo_version', DEMO_DATA_VERSION);
+    }
     const today = new Date();
-    const formatDate = (d: Date) => d.toISOString();
-    
+    const fmt = (d: Date) => d.toISOString();
+    const h = (h: number, m = 0) => { const d = new Date(today); d.setHours(h, m, 0, 0); return d; };
+    const daysAgo = (n: number) => new Date(today.getTime() - n * 86400000);
+    const daysFromNow = (n: number) => new Date(today.getTime() + n * 86400000);
+    const avatar = (id: string) => LEXIA_TEAM.find(m => m.id === id)?.avatarUrl || `/${id}.jpg`;
+
     if (!localStorage.getItem(TASKS_KEY)) {
         const tasks: Task[] = [
-            {
-                id: 'task-1',
-                title: 'Envoyer proposition commerciale',
-                companyId: 'omnes-education',
-                companyName: 'OMNES Education',
-                assignedTo: ['mathis'],
-                assignedBy: 'martial',
-                dueDate: formatDate(today),
-                priority: 'high',
-                status: 'pending',
-                createdAt: formatDate(new Date(today.getTime() - 86400000))
-            },
-            {
-                id: 'task-2',
-                title: 'Appel de suivi contrat',
-                companyId: 'vetoptim',
-                companyName: 'Vetoptim',
-                assignedTo: ['martial', 'mathis'],
-                assignedBy: 'martial',
-                dueDate: formatDate(new Date(today.getTime() + 86400000)),
-                priority: 'high',
-                status: 'pending',
-                createdAt: formatDate(new Date(today.getTime() - 172800000))
-            },
-            {
-                id: 'task-3',
-                title: 'Préparer démo produit',
-                companyId: 'gruau',
-                companyName: 'Gruau',
-                assignedTo: ['hugo', 'mathis'],
-                assignedBy: 'mathis',
-                dueDate: formatDate(new Date(today.getTime() + 172800000)),
-                priority: 'medium',
-                status: 'in_progress',
-                createdAt: formatDate(new Date(today.getTime() - 259200000))
-            }
+            { id: 'task-1', title: 'Envoyer proposition Datapulse', description: 'Finaliser la proposition avec tarifs API et l\'envoyer à Lucas Bernard.', companyId: '11111111-aaaa-bbbb-cccc-111111111111', companyName: 'Datapulse', assignedTo: ['mathis', 'martial'], assignedBy: 'martial', dueDate: fmt(daysAgo(1)), priority: 'high', status: 'pending', createdAt: fmt(daysAgo(5)) },
+            { id: 'task-2', title: 'Relancer Nathalie Girard (Medianova)', description: 'Vérifier le retour du juridique sur le contrat.', companyId: '33333333-aaaa-bbbb-cccc-333333333333', companyName: 'Medianova', assignedTo: ['martial', 'mathis'], assignedBy: 'martial', dueDate: fmt(daysAgo(2)), priority: 'high', status: 'pending', createdAt: fmt(daysAgo(7)) },
+            { id: 'task-3', title: 'Préparer démo technique Datapulse', description: 'Slides API et cas d\'usage data analytics pour le CTO.', companyId: '11111111-aaaa-bbbb-cccc-111111111111', companyName: 'Datapulse', assignedTo: ['mathis'], assignedBy: 'mathis', dueDate: fmt(today), priority: 'high', status: 'in_progress', createdAt: fmt(daysAgo(3)) },
+            { id: 'task-4', title: 'Appel avec Antoine (GreenTech)', description: 'Point de suivi sur la proposition envoyée.', companyId: '22222222-aaaa-bbbb-cccc-222222222222', companyName: 'GreenTech Solutions', assignedTo: ['hugo'], assignedBy: 'hugo', dueDate: fmt(today), priority: 'medium', status: 'pending', createdAt: fmt(daysAgo(2)) },
+            { id: 'task-5', title: 'Organiser onboarding UrbanCraft v2', description: 'Planifier la migration vers la nouvelle version.', companyId: '55555555-aaaa-bbbb-cccc-555555555555', companyName: 'UrbanCraft', assignedTo: ['hugo'], assignedBy: 'hugo', dueDate: fmt(daysFromNow(3)), priority: 'medium', status: 'pending', createdAt: fmt(daysAgo(1)) },
+            { id: 'task-6', title: 'Qualifier NordLogistic', description: 'Préparer le brief et planifier un premier call.', companyId: '44444444-aaaa-bbbb-cccc-444444444444', companyName: 'NordLogistic', assignedTo: ['mathis'], assignedBy: 'mathis', dueDate: fmt(daysFromNow(5)), priority: 'low', status: 'pending', createdAt: fmt(today) },
+            { id: 'task-7', title: 'Rédiger étude de cas Vetoptim', description: 'Documenter le succès client pour le marketing.', companyId: 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb', companyName: 'Vetoptim', assignedTo: ['martial', 'hugo'], assignedBy: 'martial', dueDate: fmt(daysFromNow(7)), priority: 'medium', status: 'in_progress', createdAt: fmt(daysAgo(4)) },
+            { id: 'task-8', title: 'Review contrat Medianova', description: 'Relire le contrat avant envoi final.', companyId: '33333333-aaaa-bbbb-cccc-333333333333', companyName: 'Medianova', assignedTo: ['martial', 'mathis'], assignedBy: 'martial', dueDate: fmt(daysFromNow(2)), priority: 'high', status: 'in_progress', createdAt: fmt(daysAgo(2)) },
+            { id: 'task-9', title: 'Premier call Datapulse', companyId: '11111111-aaaa-bbbb-cccc-111111111111', companyName: 'Datapulse', assignedTo: ['mathis'], assignedBy: 'mathis', dueDate: fmt(daysAgo(10)), priority: 'high', status: 'completed', createdAt: fmt(daysAgo(15)), updatedAt: fmt(daysAgo(10)) },
+            { id: 'task-10', title: 'Envoyer contrat Vetoptim', companyId: 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb', companyName: 'Vetoptim', assignedTo: ['martial'], assignedBy: 'martial', dueDate: fmt(daysAgo(5)), priority: 'high', status: 'completed', createdAt: fmt(daysAgo(10)), updatedAt: fmt(daysAgo(5)) },
         ];
         localStorage.setItem(TASKS_KEY, JSON.stringify(tasks));
     }
 
     if (!localStorage.getItem(ACTIVITY_KEY)) {
         const activities: TeamActivity[] = [
-            { id: 'act-1', userId: 'martial', userName: 'Martial', userAvatar: '/martial.jpg', action: 'signed', targetType: 'deal', targetId: 'vetoptim', targetName: 'Vetoptim', description: 'Contrat signé - 24k/an', timestamp: formatDate(new Date(today.getTime() - 3600000)) },
-            { id: 'act-2', userId: 'mathis', userName: 'Mathis', userAvatar: '/mathis.jpg', action: 'contacted', targetType: 'company', targetId: 'omnes-education', targetName: 'OMNES Education', description: 'Envoi proposition v2', timestamp: formatDate(new Date(today.getTime() - 7200000)) },
-            { id: 'act-3', userId: 'hugo', userName: 'Hugo', userAvatar: '/hugo.jpg', action: 'created', targetType: 'contact', targetId: 'gruau', targetName: 'Jean-Marc Leroy', description: 'Nouveau contact chez Gruau', timestamp: formatDate(new Date(today.getTime() - 14400000)) },
+            { id: 'act-1', userId: 'martial', userName: 'Martial', userAvatar: avatar('martial'), action: 'contacted', targetType: 'company', targetId: '33333333-aaaa-bbbb-cccc-333333333333', targetName: 'Medianova', description: 'Échange avec le juridique sur les conditions', timestamp: fmt(new Date(today.getTime() - 3600000)) },
+            { id: 'act-2', userId: 'mathis', userName: 'Mathis', userAvatar: avatar('mathis'), action: 'created', targetType: 'task', targetId: 'task-3', targetName: 'Préparer démo technique Datapulse', description: 'Démo API demandée par le CTO', timestamp: fmt(new Date(today.getTime() - 3 * 3600000)) },
+            { id: 'act-3', userId: 'hugo', userName: 'Hugo', userAvatar: avatar('hugo'), action: 'contacted', targetType: 'company', targetId: '22222222-aaaa-bbbb-cccc-222222222222', targetName: 'GreenTech Solutions', description: 'Suivi proposition avec Antoine', timestamp: fmt(new Date(today.getTime() - 5 * 3600000)) },
+            { id: 'act-4', userId: 'martial', userName: 'Martial', userAvatar: avatar('martial'), action: 'mentioned', targetType: 'project', targetId: '33333333-aaaa-bbbb-cccc-333333333333', targetName: 'Déploiement Medianova', description: '@Mathis @Hugo préparez le kick-off', timestamp: fmt(new Date(today.getTime() - 6 * 3600000)) },
+            { id: 'act-5', userId: 'mathis', userName: 'Mathis', userAvatar: avatar('mathis'), action: 'contacted', targetType: 'company', targetId: '11111111-aaaa-bbbb-cccc-111111111111', targetName: 'Datapulse', description: 'Point technique avec Lucas Bernard (CTO)', timestamp: fmt(daysAgo(1)) },
+            { id: 'act-6', userId: 'hugo', userName: 'Hugo', userAvatar: avatar('hugo'), action: 'completed', targetType: 'task', targetId: 'task-9', targetName: 'Premier call Datapulse', description: 'Call de découverte effectué', timestamp: fmt(daysAgo(2)) },
+            { id: 'act-7', userId: 'martial', userName: 'Martial', userAvatar: avatar('martial'), action: 'signed', targetType: 'deal', targetId: 'urbancraft', targetName: 'UrbanCraft', description: 'Renouvellement contrat annuel 12k€', timestamp: fmt(daysAgo(2)) },
+            { id: 'act-8', userId: 'mathis', userName: 'Mathis', userAvatar: avatar('mathis'), action: 'created', targetType: 'project', targetId: '11111111-aaaa-bbbb-cccc-111111111111', targetName: 'Datapulse - CRM & Data Stack', description: 'Nouveau projet créé', timestamp: fmt(daysAgo(5)) },
         ];
         localStorage.setItem(ACTIVITY_KEY, JSON.stringify(activities));
     }
 
     if (!localStorage.getItem(NOTIFICATIONS_KEY)) {
         const notifications: Notification[] = [
-            { id: 'notif-1', userId: 'hugo', type: 'mention', title: 'Mathis vous a mentionné', message: 'Sur OMNES Education: "@Hugo préparer la démo?"', link: '/company/omnes-education', read: false, createdAt: formatDate(new Date(today.getTime() - 28800000)) },
-            { id: 'notif-2', userId: 'mathis', type: 'task_assigned', title: 'Nouvelle tâche assignée', message: 'Martial: Envoyer proposition commerciale', link: '/company/omnes-education', read: false, createdAt: formatDate(new Date(today.getTime() - 86400000)) }
+            { id: 'n-1', userId: 'mathis', type: 'mention', title: 'Martial vous a mentionné', message: 'Sur Datapulse : "@Mathis finalise la proposition"', link: '/tasks', read: false, createdAt: fmt(daysAgo(1)) },
+            { id: 'n-2', userId: 'mathis', type: 'mention', title: 'Martial vous a mentionné', message: 'Sur Medianova : "checker le template contrat"', link: '/tasks', read: false, createdAt: fmt(new Date(today.getTime() - 6 * 3600000)) },
+            { id: 'n-3', userId: 'mathis', type: 'mention', title: 'Hugo vous a mentionné', message: 'Sur OMNES : "Planning campus Lyon"', link: '/projects', read: false, createdAt: fmt(daysAgo(3)) },
+            { id: 'n-4', userId: 'mathis', type: 'task_assigned', title: 'Nouvelle tâche assignée', message: 'Qualifier NordLogistic', link: '/tasks', read: false, createdAt: fmt(today) },
+            { id: 'n-5', userId: 'hugo', type: 'mention', title: 'Mathis vous a mentionné', message: 'Sur Datapulse : "prépare les slides data"', link: '/tasks', read: false, createdAt: fmt(new Date(today.getTime() - 3 * 3600000)) },
+            { id: 'n-6', userId: 'hugo', type: 'mention', title: 'Martial vous a mentionné', message: 'Sur Medianova : "Préparez le kick-off"', link: '/projects', read: false, createdAt: fmt(new Date(today.getTime() - 6 * 3600000)) },
         ];
         localStorage.setItem(NOTIFICATIONS_KEY, JSON.stringify(notifications));
     }
 
     if (!localStorage.getItem(EVENTS_KEY)) {
         const events: CalendarEvent[] = [
-            { id: 'evt-1', title: 'Call découverte OMNES', type: 'call', companyId: 'omnes-education', companyName: 'OMNES Education', startTime: new Date(today.setHours(10, 0, 0, 0)).toISOString(), attendees: ['mathis', 'hugo'] },
-            { id: 'evt-2', title: 'Démo Vetoptim', type: 'meeting', companyId: 'vetoptim', companyName: 'Vetoptim', startTime: new Date(today.setHours(14, 0, 0, 0)).toISOString(), attendees: ['martial'] },
-            { id: 'evt-3', title: 'Sync équipe', type: 'meeting', startTime: new Date(today.setHours(16, 30, 0, 0)).toISOString(), attendees: ['mathis', 'martial', 'hugo'] }
+            { id: 'evt-1', title: 'Point technique Datapulse', type: 'call', companyId: '11111111-aaaa-bbbb-cccc-111111111111', companyName: 'Datapulse', startTime: h(10).toISOString(), attendees: ['mathis'] },
+            { id: 'evt-2', title: 'Démo Vetoptim', type: 'meeting', companyId: 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb', companyName: 'Vetoptim', startTime: h(14).toISOString(), attendees: ['martial'] },
+            { id: 'evt-3', title: 'Sync équipe Lexia', type: 'meeting', startTime: h(16, 30).toISOString(), attendees: ['mathis', 'martial', 'hugo'] },
         ];
         localStorage.setItem(EVENTS_KEY, JSON.stringify(events));
     }
@@ -479,21 +524,26 @@ class WorkspaceService {
         if (await checkDB()) {
             try {
                 const rows = await api<any[]>(`/task_comments?task_id=eq.${taskId}&order=created_at.asc`);
-                return rows.map(r => ({
-                    id: r.id, taskId: r.task_id, userId: toAppUserId(r.user_id || ''),
-                    userName: r.user_name, userAvatar: r.user_avatar,
-                    content: r.content, mentions: (r.mentions || []).map(toAppUserId),
-                    createdAt: r.created_at,
-                }));
-            } catch { /* fallback */ }
+                return rows.map(r => {
+                    const uid = toAppUserId(r.user_id || '');
+                    return {
+                        id: r.id, taskId: r.task_id, userId: uid,
+                        userName: r.user_name, userAvatar: resolveTeamAvatar(uid) || r.user_avatar,
+                        content: r.content, mentions: (r.mentions || []).map(toAppUserId),
+                        createdAt: r.created_at,
+                    };
+                });
+            } catch { /* fallback below */ }
         }
-        return [];
+        // localStorage fallback
+        const all: TaskComment[] = JSON.parse(localStorage.getItem('lexia_task_comments') || '[]');
+        return all.filter(c => c.taskId === taskId).sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
     }
 
     async addTaskComment(taskId: string, content: string, mentions: string[] = []): Promise<TaskComment | null> {
         const user = authService.getCurrentUser();
         if (!user) return null;
-        
+
         if (await checkDB()) {
             try {
                 const rows = await api<any[]>('/task_comments', {
@@ -502,7 +552,7 @@ class WorkspaceService {
                         task_id: taskId,
                         user_id: toDbUserId(user.id),
                         user_name: user.name,
-                        user_avatar: user.avatarUrl || null,
+                        user_avatar: resolveTeamAvatar(user.id) || user.avatarUrl || null,
                         content,
                         mentions: mentions.map(m => toDbUserId(m)),
                     }),
@@ -510,7 +560,6 @@ class WorkspaceService {
                 const r = rows[0];
                 window.dispatchEvent(new CustomEvent('task-comments-update'));
 
-                // Notify mentioned users
                 if (mentions.length > 0) {
                     const task = (await this.getTasks()).find(t => t.id === taskId);
                     mentions.forEach(userId => {
@@ -526,15 +575,49 @@ class WorkspaceService {
                     });
                 }
 
+                const retUid = toAppUserId(r.user_id || '');
                 return {
-                    id: r.id, taskId: r.task_id, userId: toAppUserId(r.user_id || ''),
-                    userName: r.user_name, userAvatar: r.user_avatar,
+                    id: r.id, taskId: r.task_id, userId: retUid,
+                    userName: r.user_name, userAvatar: resolveTeamAvatar(retUid) || r.user_avatar,
                     content: r.content, mentions: (r.mentions || []).map(toAppUserId),
                     createdAt: r.created_at,
                 };
-            } catch { /* fallback */ }
+            } catch { /* fallback below */ }
         }
-        return null;
+
+        // localStorage fallback
+        const comment: TaskComment = {
+            id: `cmt-${Date.now()}`,
+            taskId,
+            userId: user.id,
+            userName: user.name,
+            userAvatar: resolveTeamAvatar(user.id) || user.avatarUrl,
+            content,
+            mentions,
+            createdAt: new Date().toISOString(),
+        };
+        const all: TaskComment[] = JSON.parse(localStorage.getItem('lexia_task_comments') || '[]');
+        all.push(comment);
+        localStorage.setItem('lexia_task_comments', JSON.stringify(all));
+        window.dispatchEvent(new CustomEvent('task-comments-update'));
+
+        // Notify mentioned users
+        if (mentions.length > 0) {
+            const task = (await this.getTasks()).find(t => t.id === taskId);
+            mentions.forEach(userId => {
+                if (userId !== user.id) {
+                    this.addNotification({
+                        userId,
+                        type: 'mention',
+                        title: `${user.name} vous a mentionné`,
+                        message: `Sur la tâche "${task?.title || ''}": "${content.slice(0, 80)}"`,
+                        link: `/tasks`,
+                    });
+                }
+            });
+        }
+
+        return comment;
     }
 
     // =====================================================
@@ -549,7 +632,12 @@ class WorkspaceService {
             } catch { /* fallback */ }
         }
         const data = localStorage.getItem(ACTIVITY_KEY);
-        return data ? JSON.parse(data) : [];
+        const activities: TeamActivity[] = data ? JSON.parse(data) : [];
+        // Patch stale avatars from localStorage with fresh team avatars
+        return activities.map(a => ({
+            ...a,
+            userAvatar: resolveTeamAvatar(a.userId) || a.userAvatar,
+        }));
     }
 
     async getRecentActivity(limit = 10): Promise<TeamActivity[]> {
@@ -570,7 +658,7 @@ class WorkspaceService {
                     body: JSON.stringify({
                         user_id: toDbUserId(user.id),
                         user_name: user.name,
-                        user_avatar: user.avatarUrl,
+                        user_avatar: resolveTeamAvatar(user.id) || user.avatarUrl,
                         action: activity.action,
                         target_type: activity.targetType,
                         target_id: activity.targetId,
@@ -599,7 +687,7 @@ class WorkspaceService {
         const activities = JSON.parse(localStorage.getItem(ACTIVITY_KEY) || '[]');
         const newActivity: TeamActivity = {
             ...activity, id: `act-${Date.now()}`,
-            userId: user.id, userName: user.name, userAvatar: user.avatarUrl,
+            userId: user.id, userName: user.name, userAvatar: resolveTeamAvatar(user.id) || user.avatarUrl,
             timestamp: new Date().toISOString()
         };
         activities.unshift(newActivity);
@@ -1162,17 +1250,20 @@ class WorkspaceService {
         if (await checkDB()) {
             try {
                 const rows = await api<any[]>(`/project_notes?project_id=eq.${projectId}&order=created_at.desc`);
-                return rows.map(r => ({
-                    id: r.id,
-                    projectId: r.project_id,
-                    userId: toAppUserId(r.user_id || ''),
-                    userName: r.user_name,
-                    userAvatar: r.user_avatar,
-                    content: r.content,
-                    mentions: r.mentions || [],
-                    noteType: r.note_type || 'message',
-                    createdAt: r.created_at,
-                }));
+                return rows.map(r => {
+                    const uid = toAppUserId(r.user_id || '');
+                    return {
+                        id: r.id,
+                        projectId: r.project_id,
+                        userId: uid,
+                        userName: r.user_name,
+                        userAvatar: resolveTeamAvatar(uid) || r.user_avatar,
+                        content: r.content,
+                        mentions: r.mentions || [],
+                        noteType: r.note_type || 'message',
+                        createdAt: r.created_at,
+                    };
+                });
             } catch (e) {
                 console.error('[Workspace] getProjectNotes error:', e);
             }
@@ -1191,7 +1282,7 @@ class WorkspaceService {
                         project_id: projectId,
                         user_id: toDbUserId(user.id),
                         user_name: user.name,
-                        user_avatar: user.avatarUrl || null,
+                        user_avatar: resolveTeamAvatar(user.id) || user.avatarUrl || null,
                         content,
                         mentions: mentions.map(m => toDbUserId(m)),
                         note_type: noteType,
@@ -1199,12 +1290,13 @@ class WorkspaceService {
                 });
                 window.dispatchEvent(new CustomEvent('projects-update'));
                 const r = rows[0];
+                const retUid = toAppUserId(r.user_id || '');
                 return {
                     id: r.id,
                     projectId: r.project_id,
-                    userId: toAppUserId(r.user_id || ''),
+                    userId: retUid,
                     userName: r.user_name,
-                    userAvatar: r.user_avatar,
+                    userAvatar: resolveTeamAvatar(retUid) || r.user_avatar,
                     content: r.content,
                     mentions: r.mentions || [],
                     noteType: r.note_type,
@@ -1421,6 +1513,21 @@ class WorkspaceService {
                 } catch { /* mentions column may not exist on task_comments yet */ }
             } catch (e) {
                 console.error('[Workspace] getMyMentions error:', e);
+            }
+        }
+        // localStorage fallback for task comment mentions
+        if (results.length === 0) {
+            const allComments: TaskComment[] = JSON.parse(localStorage.getItem('lexia_task_comments') || '[]');
+            const myMentionComments = allComments.filter(c => c.mentions?.includes(user.id) && c.userId !== user.id);
+            const tasks = await this.getTasks();
+            for (const c of myMentionComments) {
+                const tk = tasks.find(t => t.id === c.taskId);
+                results.push({
+                    id: c.id, projectId: '', projectTitle: '', companyName: tk?.companyName || '',
+                    content: c.content, authorId: c.userId, authorName: c.userName,
+                    authorAvatar: c.userAvatar, createdAt: c.createdAt, noteType: 'task_comment',
+                    source: 'task_comment', taskTitle: tk?.title || '', link: '/tasks',
+                });
             }
         }
         results.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());

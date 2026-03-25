@@ -20,7 +20,7 @@ const Calendar = React.lazy(() => import('./pages/Calendar').then(m => ({ defaul
 const Tasks = React.lazy(() => import('./pages/Tasks'));
 const Deals = React.lazy(() => import('./pages/Deals'));
 const Projects = React.lazy(() => import('./pages/Projects'));
-const Analytics = React.lazy(() => import('./pages/Analytics'));
+// const Analytics = React.lazy(() => import('./pages/Analytics'));
 const EmailTemplates = React.lazy(() => import('./pages/EmailTemplates'));
 
 // Loading fallback with skeleton
@@ -69,7 +69,7 @@ const AppRoutes: React.FC = () => (
                 <Route path="/tasks" element={<Tasks />} />
                 <Route path="/projects" element={<Projects />} />
                 <Route path="/deals" element={<Deals />} />
-                <Route path="/analytics" element={<Analytics />} />
+                {/* <Route path="/analytics" element={<Analytics />} /> */}
                 <Route path="/templates" element={<EmailTemplates />} />
                 <Route path="/settings" element={<Settings />} />
             </Route>

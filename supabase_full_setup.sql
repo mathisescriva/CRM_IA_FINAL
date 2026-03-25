@@ -320,31 +320,24 @@ ALTER TABLE project_members ENABLE ROW LEVEL SECURITY;
 ALTER TABLE project_notes ENABLE ROW LEVEL SECURITY;
 
 -- Allow all for anon (internal tool, no auth needed)
-DO $$ DECLARE t TEXT; BEGIN
-FOR t IN SELECT tablename FROM pg_tables WHERE schemaname = 'public' LOOP
-  EXECUTE format('CREATE POLICY IF NOT EXISTS "allow_all_%s" ON %I FOR ALL USING (true) WITH CHECK (true)', t, t);
-  EXCEPTION WHEN duplicate_object THEN NULL;
-END LOOP; END $$;
-
--- Simpler approach: create policies one by one
-CREATE POLICY IF NOT EXISTS "allow_all" ON users FOR ALL USING (true) WITH CHECK (true);
-CREATE POLICY IF NOT EXISTS "allow_all" ON companies FOR ALL USING (true) WITH CHECK (true);
-CREATE POLICY IF NOT EXISTS "allow_all" ON contacts FOR ALL USING (true) WITH CHECK (true);
-CREATE POLICY IF NOT EXISTS "allow_all" ON contact_emails FOR ALL USING (true) WITH CHECK (true);
-CREATE POLICY IF NOT EXISTS "allow_all" ON activities FOR ALL USING (true) WITH CHECK (true);
-CREATE POLICY IF NOT EXISTS "allow_all" ON documents FOR ALL USING (true) WITH CHECK (true);
-CREATE POLICY IF NOT EXISTS "allow_all" ON company_team_members FOR ALL USING (true) WITH CHECK (true);
-CREATE POLICY IF NOT EXISTS "allow_all" ON checklist_items FOR ALL USING (true) WITH CHECK (true);
-CREATE POLICY IF NOT EXISTS "allow_all" ON tasks FOR ALL USING (true) WITH CHECK (true);
-CREATE POLICY IF NOT EXISTS "allow_all" ON task_assignees FOR ALL USING (true) WITH CHECK (true);
-CREATE POLICY IF NOT EXISTS "allow_all" ON task_comments FOR ALL USING (true) WITH CHECK (true);
-CREATE POLICY IF NOT EXISTS "allow_all" ON team_activity FOR ALL USING (true) WITH CHECK (true);
-CREATE POLICY IF NOT EXISTS "allow_all" ON notifications FOR ALL USING (true) WITH CHECK (true);
-CREATE POLICY IF NOT EXISTS "allow_all" ON deals FOR ALL USING (true) WITH CHECK (true);
-CREATE POLICY IF NOT EXISTS "allow_all" ON email_templates FOR ALL USING (true) WITH CHECK (true);
-CREATE POLICY IF NOT EXISTS "allow_all" ON projects FOR ALL USING (true) WITH CHECK (true);
-CREATE POLICY IF NOT EXISTS "allow_all" ON project_documents FOR ALL USING (true) WITH CHECK (true);
-CREATE POLICY IF NOT EXISTS "allow_all" ON project_members FOR ALL USING (true) WITH CHECK (true);
-CREATE POLICY IF NOT EXISTS "allow_all" ON project_notes FOR ALL USING (true) WITH CHECK (true);
+-- Drop existing policies first, then create
+DO $$ DECLARE
+  t TEXT;
+  tables TEXT[] := ARRAY[
+    'users','companies','contacts','contact_emails','activities','documents',
+    'company_team_members','checklist_items','tasks','task_assignees','task_comments',
+    'team_activity','notifications','deals','email_templates','projects',
+    'project_documents','project_members','project_notes'
+  ];
+BEGIN
+  FOREACH t IN ARRAY tables LOOP
+    BEGIN
+      EXECUTE format('DROP POLICY IF EXISTS "allow_all" ON %I', t);
+      EXECUTE format('CREATE POLICY "allow_all" ON %I FOR ALL USING (true) WITH CHECK (true)', t);
+    EXCEPTION WHEN undefined_table THEN
+      RAISE NOTICE 'Table % does not exist, skipping', t;
+    END;
+  END LOOP;
+END $$;
 
 SELECT 'Schema created successfully!' AS result;

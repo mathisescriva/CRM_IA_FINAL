@@ -11,6 +11,291 @@ import { gmailService } from './gmail';
 import { Company, Contact, Activity, PipelineStage, CompanyType, Priority, EntityType } from '../types';
 import { PIPELINE_COLUMNS } from '../constants';
 
+// ─── Email body decoding helpers ───
+function decodeBase64Url(data: string): string {
+    try {
+        const base64 = data.replace(/-/g, '+').replace(/_/g, '/');
+        return decodeURIComponent(escape(atob(base64)));
+    } catch {
+        try { return atob(data.replace(/-/g, '+').replace(/_/g, '/')); } catch { return data; }
+    }
+}
+
+function extractEmailBody(payload: any): string {
+    let text = '';
+    let html = '';
+    const extractFromParts = (parts: any[]) => {
+        for (const part of parts) {
+            if (part.parts) extractFromParts(part.parts);
+            if (part.mimeType === 'text/plain' && part.body?.data && !text) text = decodeBase64Url(part.body.data);
+            if (part.mimeType === 'text/html' && part.body?.data && !html) html = decodeBase64Url(part.body.data);
+        }
+    };
+    if (payload?.parts) extractFromParts(payload.parts);
+    else if (payload?.body?.data) {
+        const d = decodeBase64Url(payload.body.data);
+        if (payload.mimeType === 'text/html') html = d; else text = d;
+    }
+    // Strip HTML tags to get plain text for AI analysis
+    if (!text && html) text = html.replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '').replace(/<[^>]+>/g, ' ').replace(/&nbsp;/g, ' ').replace(/\s+/g, ' ').trim();
+    return text;
+}
+
+function getEmailHeader(email: any, name: string): string {
+    return email.payload?.headers?.find((h: any) => h.name.toLowerCase() === name.toLowerCase())?.value || '';
+}
+
+// ─── Conversation Timeline Builder ───
+// Builds per-contact conversation history from inbox + sent emails
+interface ConversationEntry {
+    direction: 'received' | 'sent';
+    date: Date;
+    subject: string;
+    emailId: string;
+    threadId: string;
+}
+
+interface ContactConversation {
+    contactEmail: string;
+    contactName: string;
+    companyName: string;
+    companyId: string;
+    importance: string;
+    pipelineStage: string;
+    contactRole: string;
+    entries: ConversationEntry[];
+    lastReceived: { date: Date; subject: string } | null;
+    lastSent: { date: Date; subject: string } | null;
+    conversationStatus: 'needs_our_reply' | 'awaiting_their_reply' | 'no_recent_exchange' | 'up_to_date';
+    daysSinceLastExchange: number;
+    daysSinceOurLastAction: number;
+    pendingTopics: string[];
+    urgency: 'critical' | 'high' | 'medium' | 'low';
+    recommendation: string;
+}
+
+function extractEmail(raw: string): string {
+    return (raw.match(/<(.+?)>/)?.[1] || raw).toLowerCase().trim();
+}
+
+function detectImportantTopics(subject: string): string[] {
+    const topics: string[] = [];
+    const s = subject.toLowerCase();
+    if (/proposition|proposal|offre|devis|quote/i.test(s)) topics.push('Proposition commerciale');
+    if (/contrat|contract|signature|signing/i.test(s)) topics.push('Contrat/Signature');
+    if (/facture|invoice|paiement|payment/i.test(s)) topics.push('Facturation');
+    if (/rdv|rendez-vous|meeting|reunion|call|visio/i.test(s)) topics.push('Rendez-vous');
+    if (/urgent|asap|priorit/i.test(s)) topics.push('Demande urgente');
+    if (/demo|demonstration|presentation/i.test(s)) topics.push('Démo/Présentation');
+    if (/onboarding|integration|mise en place/i.test(s)) topics.push('Onboarding');
+    if (/relance|follow.?up|rappel|reminder/i.test(s)) topics.push('Relance');
+    return topics;
+}
+
+async function buildConversationTimelines(
+    crmContacts: { email: string; name: string; role: string; companyId: string; companyName: string; importance: string; stage: string }[]
+): Promise<ContactConversation[]> {
+    const now = new Date();
+
+    // Fetch inbox (received) and sent emails — headers only for speed
+    // Use 100 sent to avoid missing replies buried in high-volume outbox
+    const [inboxHeaders, sentHeaders] = await Promise.all([
+        gmailService.listMessageHeaders(50, 'in:inbox -category:promotions -category:social'),
+        gmailService.listMessageHeaders(100, 'in:sent'),
+    ]);
+
+    // ─── THREAD TRACKING ───
+    // Build a map: threadId → latest sent date (to detect replies we already sent)
+    const sentByThread = new Map<string, { date: Date; subject: string }>();
+    for (const msg of sentHeaders) {
+        const date = new Date(msg.date);
+        const existing = sentByThread.get(msg.threadId);
+        if (!existing || date > existing.date) {
+            sentByThread.set(msg.threadId, { date, subject: msg.subject });
+        }
+    }
+
+    // Build a lookup: email address -> CRM contact info
+    const crmLookup = new Map<string, typeof crmContacts[0]>();
+    crmContacts.forEach(c => crmLookup.set(c.email, c));
+
+    // Build per-contact conversation map
+    const convMap = new Map<string, { contact: typeof crmContacts[0]; entries: ConversationEntry[] }>();
+
+    // Process inbox (received emails)
+    for (const msg of inboxHeaders) {
+        const fromEmail = extractEmail(msg.from);
+        const contact = crmLookup.get(fromEmail);
+        if (!contact) continue;
+        if (!convMap.has(fromEmail)) convMap.set(fromEmail, { contact, entries: [] });
+        convMap.get(fromEmail)!.entries.push({
+            direction: 'received',
+            date: new Date(msg.date),
+            subject: msg.subject,
+            emailId: msg.id,
+            threadId: msg.threadId,
+        });
+
+        // ─── THREAD-AWARE REPLY DETECTION ───
+        // If we already sent a message in this same thread AFTER this inbox email,
+        // add it as a 'sent' entry so the conversation status is correct
+        const sentInThread = sentByThread.get(msg.threadId);
+        if (sentInThread && sentInThread.date > new Date(msg.date)) {
+            // We already replied in this thread — add a synthetic sent entry
+            const alreadyTracked = convMap.get(fromEmail)!.entries.some(
+                e => e.direction === 'sent' && e.threadId === msg.threadId
+            );
+            if (!alreadyTracked) {
+                convMap.get(fromEmail)!.entries.push({
+                    direction: 'sent',
+                    date: sentInThread.date,
+                    subject: sentInThread.subject,
+                    emailId: 'thread-reply',
+                    threadId: msg.threadId,
+                });
+            }
+        }
+    }
+
+    // Process sent emails (by TO and CC addresses)
+    for (const msg of sentHeaders) {
+        // Check both To and CC fields for CRM contacts
+        const allRecipients = [...(msg.to || '').split(','), ...(msg.cc || '').split(',')].filter(Boolean);
+        // Note: CC is available if the header was fetched (we request it in listMessageHeaders)
+        for (const raw of allRecipients) {
+            const toEmail = extractEmail(raw);
+            const contact = crmLookup.get(toEmail);
+            if (!contact) continue;
+            if (!convMap.has(toEmail)) convMap.set(toEmail, { contact, entries: [] });
+            // Avoid duplicate entries (from thread detection above)
+            const isDuplicate = convMap.get(toEmail)!.entries.some(
+                e => e.emailId === msg.id || (e.threadId === msg.threadId && e.direction === 'sent' && Math.abs(e.date.getTime() - new Date(msg.date).getTime()) < 60000)
+            );
+            if (!isDuplicate) {
+                convMap.get(toEmail)!.entries.push({
+                    direction: 'sent',
+                    date: new Date(msg.date),
+                    subject: msg.subject,
+                    emailId: msg.id,
+                    threadId: msg.threadId,
+                });
+            }
+        }
+    }
+
+    // Also add CRM contacts with NO email exchange at all (they need attention too)
+    const seenEmails = new Set(convMap.keys());
+    for (const c of crmContacts) {
+        if (!seenEmails.has(c.email) && (c.importance === 'high' || c.stage === 'proposal' || c.stage === 'validation')) {
+            convMap.set(c.email, { contact: c, entries: [] });
+        }
+    }
+
+    // Build conversation analysis for each contact
+    const conversations: ContactConversation[] = [];
+
+    for (const [email, { contact, entries }] of convMap) {
+        // Sort entries by date (newest first)
+        entries.sort((a, b) => b.date.getTime() - a.date.getTime());
+
+        const lastReceived = entries.find(e => e.direction === 'received');
+        const lastSent = entries.find(e => e.direction === 'sent');
+
+        const lastExchangeDate = entries.length > 0 ? entries[0].date : null;
+        const daysSinceLastExchange = lastExchangeDate ? Math.floor((now.getTime() - lastExchangeDate.getTime()) / 86400000) : 999;
+
+        const daysSinceOurLastAction = lastSent ? Math.floor((now.getTime() - lastSent.date.getTime()) / 86400000) : 999;
+
+        // ─── THREAD-AWARE CONVERSATION STATUS ───
+        let status: ContactConversation['conversationStatus'];
+        if (entries.length === 0) {
+            status = 'no_recent_exchange';
+        } else {
+            const lastEntry = entries[0]; // Most recent email (any direction)
+            if (lastEntry.direction === 'sent') {
+                // We sent last → awaiting their reply
+                status = 'awaiting_their_reply';
+            } else {
+                // They sent last — BUT did we already reply in the same thread?
+                const theirLastThread = lastEntry.threadId;
+                const ourReplyInThread = entries.find(
+                    e => e.direction === 'sent' && e.threadId === theirLastThread && e.date >= lastEntry.date
+                );
+                if (ourReplyInThread) {
+                    // We replied in the same thread → awaiting their reply
+                    status = 'awaiting_their_reply';
+                } else {
+                    // No reply from us in that thread → we need to reply
+                    status = 'needs_our_reply';
+                }
+            }
+        }
+
+        // Detect important pending topics from recent subjects
+        const recentSubjects = entries.slice(0, 5).map(e => e.subject);
+        const pendingTopics = [...new Set(recentSubjects.flatMap(detectImportantTopics))];
+
+        // Determine urgency
+        let urgency: ContactConversation['urgency'] = 'low';
+        const isHighImportance = contact.importance === 'high';
+        const isActiveStage = ['proposal', 'validation', 'exchange'].includes(contact.stage);
+
+        if (status === 'needs_our_reply' && isHighImportance) urgency = 'critical';
+        else if (status === 'needs_our_reply') urgency = 'high';
+        else if (status === 'awaiting_their_reply' && daysSinceLastExchange >= 7 && isHighImportance) urgency = 'critical';
+        else if (status === 'awaiting_their_reply' && daysSinceLastExchange >= 5 && pendingTopics.length > 0) urgency = 'high';
+        else if (status === 'awaiting_their_reply' && daysSinceLastExchange >= 3) urgency = 'medium';
+        else if (status === 'no_recent_exchange' && isActiveStage) urgency = 'high';
+        else if (status === 'no_recent_exchange') urgency = 'medium';
+
+        // Generate recommendation
+        let recommendation = '';
+        if (status === 'needs_our_reply') {
+            const topic = pendingTopics.length > 0 ? ` (sujet: ${pendingTopics[0]})` : '';
+            recommendation = `Tu as recu un mail de ${contact.name} (${contact.companyName})${topic} il y a ${daysSinceLastExchange}j et tu n'as pas repondu. Reponds en priorite.`;
+        } else if (status === 'awaiting_their_reply') {
+            const sentSubject = lastSent?.subject || '';
+            const topic = pendingTopics.length > 0 ? pendingTopics[0] : sentSubject.slice(0, 50);
+            if (daysSinceLastExchange >= 7) {
+                recommendation = `Ca fait ${daysSinceLastExchange}j que tu as envoye "${topic}" a ${contact.name} (${contact.companyName}) sans reponse. Il faut relancer.`;
+            } else if (daysSinceLastExchange >= 3) {
+                recommendation = `${contact.name} (${contact.companyName}) n'a pas repondu a ton mail "${topic}" depuis ${daysSinceLastExchange}j. Envisage une relance.`;
+            } else {
+                recommendation = `Mail envoye a ${contact.name} (${contact.companyName}) il y a ${daysSinceLastExchange}j — en attente de reponse.`;
+            }
+        } else if (status === 'no_recent_exchange') {
+            recommendation = `Aucun echange email recent avec ${contact.name} (${contact.companyName}, pipeline: ${contact.stage}). Propose une prise de contact.`;
+        } else {
+            recommendation = `Conversation avec ${contact.name} (${contact.companyName}) a jour.`;
+        }
+
+        conversations.push({
+            contactEmail: email,
+            contactName: contact.name,
+            companyName: contact.companyName,
+            companyId: contact.companyId,
+            importance: contact.importance,
+            pipelineStage: contact.stage,
+            contactRole: contact.role,
+            entries,
+            lastReceived: lastReceived ? { date: lastReceived.date, subject: lastReceived.subject } : null,
+            lastSent: lastSent ? { date: lastSent.date, subject: lastSent.subject } : null,
+            conversationStatus: status,
+            daysSinceLastExchange,
+            daysSinceOurLastAction,
+            pendingTopics,
+            urgency,
+            recommendation,
+        });
+    }
+
+    // Sort by urgency: critical > high > medium > low
+    const urgOrder = { critical: 0, high: 1, medium: 2, low: 3 };
+    conversations.sort((a, b) => urgOrder[a.urgency] - urgOrder[b.urgency]);
+
+    return conversations;
+}
+
 // Types for AI responses
 export interface AIAction {
     type: 'navigate' | 'create' | 'update' | 'delete' | 'search' | 'email' | 'calendar' | 'info';
@@ -318,6 +603,19 @@ export const CRM_FUNCTIONS = [
             properties: {
                 maxEmails: { type: "number", description: "Number of recent emails to scan (default 10)" },
                 autoCreateTasks: { type: "boolean", description: "Automatically create tasks from extracted actions (default false, just list them)" }
+            }
+        }
+    },
+    {
+        name: "email_deep_analysis",
+        description: "VEILLE EMAIL COMPLETE: analyse 50+ mails (recus ET envoyes), croise avec le CRM, et construit un suivi de conversation par contact client. Detecte: 1) Mails non lus a repondre, 2) Propositions commerciales envoyees sans reponse (ex: 'Ca fait 7j que tu as envoye ce devis'), 3) Clients qui n'ont pas repondu, 4) Mails ou TU n'as pas repondu, 5) Contacts CRM sans echange recent. Retourne un followUpMonitor avec des recommandations d'action par client. USE THIS when user asks 'analyse mes mails', 'veille mail', 'qui dois-je relancer', 'fais un point', 'quels mails importants', 'qu est-ce que j ai a faire sur mes mails', 'relances a faire', 'suivi clients'.",
+        parameters: {
+            type: "object",
+            properties: {
+                maxEmails: { type: "number", description: "Max emails to analyze in inbox (default 50)" },
+                filter: { type: "string", enum: ["unread", "recent", "all"], description: "Which inbox emails: unread only, recent inbox, or all" },
+                autoSuggestReplies: { type: "boolean", description: "Whether to generate reply suggestions (default true)" },
+                includeFollowUps: { type: "boolean", description: "Include sent email tracking + follow-up detection (default true)" }
             }
         }
     },
@@ -939,33 +1237,48 @@ class LexiaAIService {
                         console.warn('[LexiaAI] Gmail not connected:', e);
                     }
 
+                    // CRM cross-ref for sender identification
+                    const sumCompanies = await companyService.getAll();
+                    const sumCrmEmails: Record<string, { name: string; company: string; importance: string }> = {};
+                    sumCompanies.forEach(co => {
+                        co.contacts.forEach((ct: any) => {
+                            ct.emails?.filter(Boolean).forEach((em: string) => {
+                                sumCrmEmails[em.toLowerCase().trim()] = { name: ct.name, company: co.name, importance: co.importance || 'normal' };
+                            });
+                        });
+                    });
+
                     const emailSummaries = emails.map(email => {
-                        const headers = email.payload?.headers || [];
-                        const getHeader = (name: string) => headers.find((h: any) => h.name.toLowerCase() === name.toLowerCase())?.value || '';
+                        const from = getEmailHeader(email, 'From');
+                        const fromEmail = (from.match(/<(.+)>/)?.[1] || from).toLowerCase().trim();
+                        const crmMatch = sumCrmEmails[fromEmail];
+                        const fullBody = extractEmailBody(email.payload);
                         return {
                             id: email.id,
-                            from: getHeader('From'),
-                            subject: getHeader('Subject'),
-                            date: getHeader('Date'),
-                            snippet: email.snippet,
+                            from: getEmailHeader(email, 'From'),
+                            subject: getEmailHeader(email, 'Subject'),
+                            date: getEmailHeader(email, 'Date'),
+                            bodyPreview: fullBody.slice(0, 400),
                             isUnread: email.labelIds?.includes('UNREAD'),
+                            isClient: !!crmMatch,
+                            companyName: crmMatch?.company || null,
+                            contactName: crmMatch?.name || null,
+                            importance: crmMatch?.importance || 'unknown',
                         };
                     });
 
-                    // Navigate to inbox
-                    if (this.navigationCallback) {
-                        this.navigationCallback('/inbox');
-                    }
+                    if (this.navigationCallback) this.navigationCallback('/inbox');
 
                     return {
                         type: 'info',
                         target: 'emails',
                         params: args,
-                        description: `${emailSummaries.length} email(s) ${filter === 'unread' ? 'non lu(s)' : filter === 'needs_reply' ? 'à traiter' : 'récent(s)'}`,
+                        description: `${emailSummaries.length} email(s) — ${emailSummaries.filter(e => e.isClient).length} de clients CRM`,
                         success: true,
                         result: {
                             count: emailSummaries.length,
                             filter,
+                            clientEmails: emailSummaries.filter(e => e.isClient).length,
                             emails: emailSummaries
                         }
                     };
@@ -1115,16 +1428,89 @@ class LexiaAIService {
                     const overdueTasks = idpTasks.filter(t => t.dueDate && new Date(t.dueDate) < now && t.status !== 'completed');
                     const todayDue = idpTasks.filter(t => { if (!t.dueDate) return false; const d = new Date(t.dueDate); return d >= todayStart && d < tomorrowStart && t.status !== 'completed'; });
                     const highPriority = idpTasks.filter(t => t.priority === 'high' && t.status !== 'completed' && !overdueTasks.includes(t));
-                    const inProgressTasks = idpTasks.filter(t => t.status === 'in_progress');
                     const upcomingTasks = idpTasks.filter(t => { if (!t.dueDate) return false; const d = new Date(t.dueDate); return d >= tomorrowStart && t.status !== 'completed'; }).slice(0, 5);
 
-                    // Email data
+                    // ─── EMAIL + CONVERSATION MONITORING (50 inbox + 50 sent) ───
                     let idpEmails: any = null;
+                    let emailsNeedingReply: any[] = [];
+                    let conversationAlerts: ContactConversation[] = [];
+
                     if (args.includeEmails !== false) {
                         try {
-                            const msgs = await gmailService.listMessages(8, 'is:unread in:inbox');
-                            idpEmails = { count: msgs.length, messages: msgs.map((e: any) => { const h = e.payload?.headers || []; const g = (n: string) => h.find((x: any) => x.name.toLowerCase() === n.toLowerCase())?.value || ''; return { from: g('From'), subject: g('Subject'), snippet: e.snippet?.slice(0, 100) }; }) };
-                        } catch { idpEmails = { count: 0, messages: [] }; }
+                            // 1. Fetch unread inbox emails (full body for content analysis)
+                            // AND sent headers for thread-aware reply detection
+                            const [msgs, idpSentHdrs] = await Promise.all([
+                                gmailService.listMessages(20, 'is:unread in:inbox -category:promotions -category:social'),
+                                gmailService.listMessageHeaders(100, 'in:sent'),
+                            ]);
+
+                            // Build sent-thread map for reply detection
+                            const idpSentThreadMap = new Map<string, Date>();
+                            for (const s of idpSentHdrs) {
+                                const d = new Date(s.date);
+                                const ex = idpSentThreadMap.get(s.threadId);
+                                if (!ex || d > ex) idpSentThreadMap.set(s.threadId, d);
+                            }
+
+                            // 2. Build CRM contacts for cross-ref AND conversation tracking
+                            const idpCompanies = await companyService.getAll();
+                            const idpCrmContacts: { email: string; name: string; role: string; companyId: string; companyName: string; importance: string; stage: string }[] = [];
+                            const idpCrmEmails: Record<string, { name: string; company: string; importance: string }> = {};
+                            idpCompanies.forEach(co => {
+                                co.contacts.forEach((ct: any) => {
+                                    ct.emails?.filter(Boolean).forEach((em: string) => {
+                                        const e = em.toLowerCase().trim();
+                                        idpCrmEmails[e] = { name: ct.name, company: co.name, importance: co.importance || 'normal' };
+                                        idpCrmContacts.push({ email: e, name: ct.name, role: ct.role || '', companyId: co.id, companyName: co.name, importance: co.importance || 'normal', stage: co.pipelineStage || '' });
+                                    });
+                                });
+                            });
+
+                            // 3. Analyze unread inbox emails (with thread-aware reply check)
+                            const analyzedMsgs = msgs.map((e: any) => {
+                                const from = getEmailHeader(e, 'From');
+                                const fromEmail = (from.match(/<(.+)>/)?.[1] || from).toLowerCase().trim();
+                                const crmMatch = idpCrmEmails[fromEmail];
+                                const fullBody = extractEmailBody(e.payload);
+                                const bodyLower = fullBody.toLowerCase();
+                                const emailDate = new Date(getEmailHeader(e, 'Date'));
+                                const threadId = e.threadId || '';
+
+                                // Check if we already replied in this thread
+                                const sentReplyDate = idpSentThreadMap.get(threadId);
+                                const alreadyReplied = !!(sentReplyDate && sentReplyDate > emailDate);
+
+                                const needsReply = !alreadyReplied && (
+                                    /\?|merci de|pouvez-vous|pourriez-vous|confirmer|retour|réponse|urgent|dispo|please|could you|let me know/.test(bodyLower) || !!crmMatch
+                                );
+                                return {
+                                    from: from.split('<')[0].trim().replace(/"/g, ''),
+                                    fromEmail,
+                                    subject: getEmailHeader(e, 'Subject'),
+                                    bodyPreview: fullBody.slice(0, 300),
+                                    isClient: !!crmMatch,
+                                    companyName: crmMatch?.company || null,
+                                    importance: crmMatch?.importance || 'unknown',
+                                    needsReply,
+                                    alreadyReplied,
+                                };
+                            });
+
+                            emailsNeedingReply = analyzedMsgs.filter(m => m.needsReply);
+                            idpEmails = {
+                                count: msgs.length,
+                                clientEmails: analyzedMsgs.filter(m => m.isClient).length,
+                                needReply: emailsNeedingReply.length,
+                                messages: analyzedMsgs,
+                            };
+
+                            // 4. Build conversation timelines (50 inbox + 50 sent headers)
+                            try {
+                                conversationAlerts = await buildConversationTimelines(idpCrmContacts);
+                            } catch (e) {
+                                console.warn('[LexiaAI] Conversation timeline failed:', e);
+                            }
+                        } catch { idpEmails = { count: 0, clientEmails: 0, needReply: 0, messages: [] }; }
                     }
 
                     // Calendar events via Google Calendar
@@ -1139,7 +1525,7 @@ class LexiaAIService {
                         } catch {}
                     }
 
-                    // Build structured sections
+                    // ─── Build structured sections ───
                     const urgent: any[] = [];
                     const important: any[] = [];
                     const toplan: any[] = [];
@@ -1153,10 +1539,42 @@ class LexiaAIService {
                     todayDue.filter(t => t.priority === 'high').forEach(t => {
                         urgent.push({ type: 'urgent_task', title: t.title, company: t.companyName, dueDate: t.dueDate, deepDiveId: `task-${t.id}` });
                     });
-                    // URGENT: critical clients (no contact 14+ days with active pipeline)
+
+                    // URGENT: conversation alerts — clients who haven't replied to important emails
+                    conversationAlerts.filter(c => c.urgency === 'critical').forEach(c => {
+                        urgent.push({
+                            type: 'follow_up_critical', name: c.contactName, company: c.companyName,
+                            status: c.conversationStatus, daysSince: c.daysSinceLastExchange,
+                            pendingTopics: c.pendingTopics, recommendation: c.recommendation,
+                            lastSent: c.lastSent ? { subject: c.lastSent.subject, daysAgo: Math.floor((now.getTime() - c.lastSent.date.getTime()) / 86400000) } : null,
+                            lastReceived: c.lastReceived ? { subject: c.lastReceived.subject, daysAgo: Math.floor((now.getTime() - c.lastReceived.date.getTime()) / 86400000) } : null,
+                            deepDiveId: `company-${c.companyId}`
+                        });
+                    });
+
+                    // URGENT: client emails needing reply (from inbox analysis)
+                    emailsNeedingReply.filter(e => e.isClient && e.importance === 'high').forEach(e => {
+                        urgent.push({ type: 'client_email', from: e.from, subject: e.subject, company: e.companyName, bodyPreview: e.bodyPreview?.slice(0, 150), deepDiveId: `email-${e.fromEmail}` });
+                    });
+
+                    // URGENT: critical clients (no contact 14+ days)
                     idpUrgent.slice(0, 3).forEach(c => {
                         const daysSince = Math.floor((now.getTime() - new Date(c.lastContactDate).getTime()) / 86400000);
-                        urgent.push({ type: 'client_followup', name: c.name, daysSinceContact: daysSince, stage: c.pipelineStage, deepDiveId: `company-${c.id}` });
+                        // Avoid duplicates from conversation alerts
+                        if (!urgent.some(u => u.company === c.name)) {
+                            urgent.push({ type: 'client_followup', name: c.name, daysSinceContact: daysSince, stage: c.pipelineStage, deepDiveId: `company-${c.id}` });
+                        }
+                    });
+
+                    // IMPORTANT: conversation alerts — high urgency (proposals awaiting reply 3-7 days)
+                    conversationAlerts.filter(c => c.urgency === 'high').forEach(c => {
+                        important.push({
+                            type: 'follow_up_high', name: c.contactName, company: c.companyName,
+                            status: c.conversationStatus, daysSince: c.daysSinceLastExchange,
+                            pendingTopics: c.pendingTopics, recommendation: c.recommendation,
+                            lastSent: c.lastSent ? { subject: c.lastSent.subject, daysAgo: Math.floor((now.getTime() - c.lastSent.date.getTime()) / 86400000) } : null,
+                            deepDiveId: `company-${c.companyId}`
+                        });
                     });
 
                     // IMPORTANT: unresolved mentions from colleagues
@@ -1171,22 +1589,56 @@ class LexiaAIService {
                     highPriority.slice(0, 3).forEach(t => {
                         important.push({ type: 'high_priority_task', title: t.title, company: t.companyName, dueDate: t.dueDate, deepDiveId: `task-${t.id}` });
                     });
+                    // IMPORTANT: client emails needing reply (normal importance)
+                    emailsNeedingReply.filter(e => e.isClient && e.importance !== 'high').forEach(e => {
+                        important.push({ type: 'client_email', from: e.from, subject: e.subject, company: e.companyName, bodyPreview: e.bodyPreview?.slice(0, 150), deepDiveId: `email-${e.fromEmail}` });
+                    });
+                    // IMPORTANT: non-client emails needing reply
+                    emailsNeedingReply.filter(e => !e.isClient).slice(0, 3).forEach(e => {
+                        important.push({ type: 'email_needs_reply', from: e.from, subject: e.subject, bodyPreview: e.bodyPreview?.slice(0, 150), deepDiveId: `email-${e.fromEmail}` });
+                    });
 
-                    // A PLANIFIER: upcoming tasks, remaining follow-ups
+                    // A PLANIFIER: medium urgency conversations + upcoming tasks
+                    conversationAlerts.filter(c => c.urgency === 'medium').forEach(c => {
+                        toplan.push({
+                            type: 'follow_up_medium', name: c.contactName, company: c.companyName,
+                            status: c.conversationStatus, daysSince: c.daysSinceLastExchange,
+                            recommendation: c.recommendation, deepDiveId: `company-${c.companyId}`
+                        });
+                    });
                     upcomingTasks.forEach(t => {
                         toplan.push({ type: 'upcoming_task', title: t.title, company: t.companyName, dueDate: t.dueDate, deepDiveId: `task-${t.id}` });
                     });
                     idpUrgent.slice(3, 6).forEach(c => {
                         const daysSince = Math.floor((now.getTime() - new Date(c.lastContactDate).getTime()) / 86400000);
-                        toplan.push({ type: 'client_followup', name: c.name, daysSinceContact: daysSince, deepDiveId: `company-${c.id}` });
+                        if (!toplan.some(u => u.company === c.name) && !urgent.some(u => u.company === c.name) && !important.some(u => u.company === c.name)) {
+                            toplan.push({ type: 'client_followup', name: c.name, daysSinceContact: daysSince, deepDiveId: `company-${c.id}` });
+                        }
                     });
 
                     // Navigate to dashboard
                     if (this.navigationCallback) this.navigationCallback('/');
 
+                    // Build conversation summary for AI context
+                    const convSummary = conversationAlerts.length > 0 ? {
+                        total: conversationAlerts.length,
+                        critical: conversationAlerts.filter(c => c.urgency === 'critical').length,
+                        high: conversationAlerts.filter(c => c.urgency === 'high').length,
+                        awaitingReply: conversationAlerts.filter(c => c.conversationStatus === 'awaiting_their_reply').length,
+                        needsOurReply: conversationAlerts.filter(c => c.conversationStatus === 'needs_our_reply').length,
+                        noExchange: conversationAlerts.filter(c => c.conversationStatus === 'no_recent_exchange').length,
+                        details: conversationAlerts.filter(c => c.urgency !== 'low').map(c => ({
+                            contact: c.contactName, company: c.companyName, importance: c.importance,
+                            status: c.conversationStatus, days: c.daysSinceLastExchange,
+                            topics: c.pendingTopics, recommendation: c.recommendation,
+                            lastSent: c.lastSent ? `"${c.lastSent.subject}" il y a ${Math.floor((now.getTime() - c.lastSent.date.getTime()) / 86400000)}j` : null,
+                            lastReceived: c.lastReceived ? `"${c.lastReceived.subject}" il y a ${Math.floor((now.getTime() - c.lastReceived.date.getTime()) / 86400000)}j` : null,
+                        })),
+                    } : null;
+
                     return {
                         type: 'info', target: 'daily_program', params: args,
-                        description: `Programme intelligent: ${urgent.length} urgent(s), ${important.length} important(s), ${toplan.length} à planifier`,
+                        description: `Programme intelligent: ${urgent.length} urgent(s), ${important.length} important(s), ${toplan.length} a planifier — Veille: ${conversationAlerts.filter(c => c.urgency !== 'low').length} client(s) a relancer`,
                         success: true,
                         result: {
                             date: now.toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }),
@@ -1197,6 +1649,7 @@ class LexiaAIService {
                             },
                             calendar: calEvents,
                             emails: idpEmails,
+                            conversationMonitor: convSummary,
                             teamPulse: idpPulse.map(m => ({ name: m.userName, lastAction: m.lastAction, activeTasks: m.activeTaskCount })),
                             stats: {
                                 totalActiveTasks: idpTasks.filter(t => t.status !== 'completed').length,
@@ -1205,6 +1658,7 @@ class LexiaAIService {
                                 unreadEmails: idpEmails?.count || 0,
                                 mentionsPending: idpMentions.length,
                                 meetingsToday: calEvents.length,
+                                clientsToFollowUp: conversationAlerts.filter(c => c.urgency !== 'low').length,
                             }
                         }
                     };
@@ -1281,28 +1735,57 @@ class LexiaAIService {
                     if (emails.length === 0) return { type: 'info', target: 'email', params: args, description: 'Aucun email trouve', success: false };
 
                     const email = emails[0];
-                    const headers = email.payload?.headers || [];
-                    const getH = (n: string) => headers.find((h: any) => h.name.toLowerCase() === n.toLowerCase())?.value || '';
-                    const from = getH('From');
-                    const subject = getH('Subject');
-                    const snippet = email.snippet || '';
+                    const from = getEmailHeader(email, 'From');
+                    const subject = getEmailHeader(email, 'Subject');
+                    
+                    // Extract FULL body for deep context
+                    const fullBody = extractEmailBody(email.payload);
+                    const bodyContext = fullBody.slice(0, 1500); // Enough for real understanding
 
-                    // Build suggested reply based on context
+                    // CRM cross-reference
+                    const srCompanies = await companyService.getAll();
+                    const fromEmailAddr = (from.match(/<(.+)>/)?.[1] || from).toLowerCase().trim();
+                    let crmInfo = '';
+                    for (const co of srCompanies) {
+                        for (const ct of co.contacts) {
+                            if (ct.emails?.some((e: string) => e.toLowerCase().trim() === fromEmailAddr)) {
+                                crmInfo = `[Client CRM: ${ct.name}, ${ct.role || ''} chez ${co.name} — pipeline: ${co.pipelineStage}, importance: ${co.importance}]`;
+                                break;
+                            }
+                        }
+                        if (crmInfo) break;
+                    }
+
                     const toneMap: Record<string, string> = {
                         formal: 'professionnel et formel', friendly: 'chaleureux et amical',
                         firm: 'ferme mais poli', apologetic: 'apologetique et comprehensif'
                     };
                     const toneDesc = toneMap[args.tone || 'formal'] || 'professionnel';
 
-                    // Generate reply — the AI model will craft this, but we provide structure
                     const replySubject = subject.startsWith('Re:') ? subject : `Re: ${subject}`;
                     const fromName = from.split('<')[0].trim().replace(/"/g, '');
+                    
+                    // Build contextual reply using the FULL email body
                     let replyBody = `Bonjour ${fromName},\n\n`;
 
                     if (args.instructions) {
                         replyBody += args.instructions;
                     } else {
-                        replyBody += `Merci pour votre message. Je reviens vers vous rapidement a ce sujet.`;
+                        // Analyze the full body to craft a relevant response
+                        const bodyLower = fullBody.toLowerCase();
+                        if (/devis|proposition|offre|prix|tarif|budget/.test(bodyLower)) {
+                            replyBody += `Merci pour votre demande. Je vous prépare une proposition détaillée et reviens vers vous très rapidement.`;
+                        } else if (/rdv|reunion|call|rendez-vous|dispo|créneau/.test(bodyLower)) {
+                            replyBody += `Merci pour votre message. Je suis disponible pour en discuter. Voici mes créneaux disponibles cette semaine : [à compléter]. N'hésitez pas à me dire ce qui vous convient.`;
+                        } else if (/urgent|asap|rapidement/.test(bodyLower)) {
+                            replyBody += `Bien reçu, je traite votre demande en priorité et reviens vers vous dans les plus brefs délais.`;
+                        } else if (/question|demande|renseignement/.test(bodyLower)) {
+                            replyBody += `Merci pour votre message. Voici les éléments de réponse : [à compléter].`;
+                        } else if (/confirmer|confirmation|valider/.test(bodyLower)) {
+                            replyBody += `Je vous confirme la bonne réception de votre message. [Détails de la confirmation à compléter].`;
+                        } else {
+                            replyBody += `Merci pour votre message. J'ai bien pris note de votre demande et reviens vers vous rapidement.`;
+                        }
                     }
                     replyBody += `\n\nCordialement,\nMathis`;
 
@@ -1314,9 +1797,13 @@ class LexiaAIService {
 
                     return {
                         type: 'email', target: 'draft', params: args,
-                        description: `Reponse suggeree pour "${subject.substring(0, 40)}..."`,
+                        description: `Reponse contextuelle pour "${subject.substring(0, 40)}..." ${crmInfo}`,
                         success: true,
-                        result: { to: replyTo, subject: replySubject, body: replyBody, originalFrom: from, originalSnippet: snippet, tone: toneDesc }
+                        result: {
+                            to: replyTo, subject: replySubject, body: replyBody,
+                            originalFrom: from, originalBody: bodyContext, tone: toneDesc,
+                            crmContext: crmInfo || 'Contact non CRM',
+                        }
                     };
                 }
 
@@ -1325,31 +1812,43 @@ class LexiaAIService {
                     let recentEmails: any[] = [];
                     try { recentEmails = await gmailService.listMessages(max, 'in:inbox is:unread'); } catch { }
 
-                    const extractedActions: { from: string; subject: string; action: string; deadline?: string }[] = [];
+                    const extractedActions: { from: string; subject: string; action: string; deadline?: string; isClient: boolean; bodyExcerpt: string }[] = [];
+
+                    // CRM cross-ref
+                    const eaCompanies = await companyService.getAll();
+                    const eaCrmEmails = new Set<string>();
+                    eaCompanies.forEach(co => co.contacts.forEach((ct: any) => ct.emails?.filter(Boolean).forEach((em: string) => eaCrmEmails.add(em.toLowerCase().trim()))));
 
                     for (const email of recentEmails) {
-                        const headers = email.payload?.headers || [];
-                        const getH = (n: string) => headers.find((h: any) => h.name.toLowerCase() === n.toLowerCase())?.value || '';
-                        const snippet = (email.snippet || '').toLowerCase();
-                        const subject = getH('Subject');
-                        const from = getH('From').split('<')[0].trim().replace(/"/g, '');
+                        const subject = getEmailHeader(email, 'Subject');
+                        const from = getEmailHeader(email, 'From').split('<')[0].trim().replace(/"/g, '');
+                        const fromEmail = (getEmailHeader(email, 'From').match(/<(.+)>/)?.[1] || getEmailHeader(email, 'From')).toLowerCase().trim();
+                        const isClient = eaCrmEmails.has(fromEmail);
 
-                        // Pattern matching for actionable content
+                        // Use FULL body for pattern matching
+                        const fullBody = extractEmailBody(email.payload);
+                        const content = (subject + ' ' + fullBody).toLowerCase();
+
                         const actionPatterns = [
                             { pattern: /envoyer|transmettre|faire parvenir/i, action: 'Envoyer un document' },
-                            { pattern: /confirmer|confirmation/i, action: 'Confirmer' },
-                            { pattern: /repondre|répondre|retour/i, action: 'Repondre' },
-                            { pattern: /planifier|organiser|rdv|reunion|rendez-vous/i, action: 'Planifier un RDV' },
-                            { pattern: /devis|proposition|offre/i, action: 'Preparer/envoyer devis' },
-                            { pattern: /urgent|asap|rapidement|au plus vite/i, action: 'Action urgente requise' },
-                            { pattern: /rappeler|appeler/i, action: 'Passer un appel' },
-                            { pattern: /deadline|date limite|avant le|d'ici/i, action: 'Respecter un delai' },
-                            { pattern: /signer|signature|contrat/i, action: 'Signature requise' },
+                            { pattern: /confirmer|confirmation|valider|validation/i, action: 'Confirmer/Valider' },
+                            { pattern: /repondre|répondre|retour|ton avis|votre avis/i, action: 'Repondre' },
+                            { pattern: /planifier|organiser|rdv|reunion|rendez-vous|call|visio/i, action: 'Planifier un RDV' },
+                            { pattern: /devis|proposition|offre|prix|tarif/i, action: 'Preparer/envoyer devis' },
+                            { pattern: /urgent|asap|rapidement|au plus vite|priorit/i, action: 'Action urgente requise' },
+                            { pattern: /rappeler|appeler|telephone/i, action: 'Passer un appel' },
+                            { pattern: /deadline|date limite|avant le|d'ici le/i, action: 'Respecter un delai' },
+                            { pattern: /signer|signature|contrat|accord/i, action: 'Signature requise' },
+                            { pattern: /paiement|facture|reglement|virement/i, action: 'Suivi paiement/facturation' },
                         ];
 
                         for (const { pattern, action } of actionPatterns) {
-                            if (pattern.test(snippet) || pattern.test(subject)) {
-                                extractedActions.push({ from, subject, action: `${action} — ${subject.substring(0, 50)}` });
+                            if (pattern.test(content)) {
+                                extractedActions.push({
+                                    from, subject, isClient,
+                                    action: `${action} — ${subject.substring(0, 50)}`,
+                                    bodyExcerpt: fullBody.slice(0, 200),
+                                });
                                 break;
                             }
                         }
@@ -1374,6 +1873,186 @@ class LexiaAIService {
                         description: `${extractedActions.length} action(s) extraite(s) de ${recentEmails.length} email(s)`,
                         success: true,
                         result: { actions: extractedActions, emailsScanned: recentEmails.length, tasksCreated: args.autoCreateTasks ? extractedActions.length : 0 }
+                    };
+                }
+
+                case 'email_deep_analysis': {
+                    const maxAnalyze = args.maxEmails || 50;
+                    const emailFilter = args.filter || 'recent';
+                    const suggestReplies = args.autoSuggestReplies !== false;
+                    const includeFollowUps = args.includeFollowUps !== false;
+
+                    // ─── 1. Build CRM contacts lookup ───
+                    const allCompanies = await companyService.getAll();
+                    const allCrmContacts: { email: string; name: string; role: string; companyId: string; companyName: string; importance: string; stage: string }[] = [];
+                    allCompanies.forEach(co => {
+                        co.contacts.forEach((ct: any) => {
+                            const emails = ct.emails?.filter(Boolean) || [];
+                            emails.forEach((em: string) => {
+                                allCrmContacts.push({
+                                    email: em.toLowerCase().trim(),
+                                    name: ct.name, role: ct.role || '',
+                                    companyId: co.id, companyName: co.name,
+                                    importance: co.importance || 'normal',
+                                    stage: co.pipelineStage || '',
+                                });
+                            });
+                        });
+                    });
+
+                    // ─── 2. Build conversation timelines (inbox + sent, 50 each) ───
+                    let conversationTimelines: ContactConversation[] = [];
+                    if (includeFollowUps) {
+                        try {
+                            conversationTimelines = await buildConversationTimelines(allCrmContacts);
+                        } catch (e) {
+                            console.warn('[LexiaAI] Conversation timeline build failed:', e);
+                        }
+                    }
+
+                    // ─── 3. Fetch sent email headers to detect already-replied threads ───
+                    let sentThreadMap = new Map<string, Date>();
+                    try {
+                        const sentHdrs = await gmailService.listMessageHeaders(100, 'in:sent');
+                        for (const s of sentHdrs) {
+                            const d = new Date(s.date);
+                            const existing = sentThreadMap.get(s.threadId);
+                            if (!existing || d > existing) sentThreadMap.set(s.threadId, d);
+                        }
+                    } catch {}
+
+                    // ─── 4. Fetch and analyze recent inbox emails (full body for top ones) ───
+                    let query = 'in:inbox -category:promotions -category:social';
+                    if (emailFilter === 'unread') query = 'is:unread in:inbox -category:promotions -category:social';
+
+                    let rawEmails: any[] = [];
+                    try { rawEmails = await gmailService.listMessages(Math.min(maxAnalyze, 30), query); } catch (e) {
+                        // If Gmail fails, still return conversation timelines
+                        if (conversationTimelines.length > 0) {
+                            const followUps = conversationTimelines.filter(c => c.urgency !== 'low');
+                            return {
+                                type: 'info', target: 'email_analysis', params: args,
+                                description: `Veille client: ${followUps.length} contact(s) necessitent une action`,
+                                success: true,
+                                result: { totalAnalyzed: 0, emails: [], followUpMonitor: { total: conversationTimelines.length, needAction: followUps.length, conversations: conversationTimelines.map(c => ({ contactName: c.contactName, companyName: c.companyName, importance: c.importance, status: c.conversationStatus, daysSinceExchange: c.daysSinceLastExchange, pendingTopics: c.pendingTopics, urgency: c.urgency, recommendation: c.recommendation, lastSent: c.lastSent ? { subject: c.lastSent.subject, daysAgo: Math.floor((Date.now() - c.lastSent.date.getTime()) / 86400000) } : null, lastReceived: c.lastReceived ? { subject: c.lastReceived.subject, daysAgo: Math.floor((Date.now() - c.lastReceived.date.getTime()) / 86400000) } : null })) } }
+                            };
+                        }
+                        return { type: 'info', target: 'email_analysis', params: args, description: 'Gmail non connecte', success: false };
+                    }
+
+                    const analyzedEmails: any[] = [];
+
+                    for (const email of rawEmails) {
+                        const from = getEmailHeader(email, 'From');
+                        const subject = getEmailHeader(email, 'Subject');
+                        const date = getEmailHeader(email, 'Date');
+                        const fromEmail = (from.match(/<(.+)>/)?.[1] || from).toLowerCase().trim();
+                        const fromName = from.split('<')[0].trim().replace(/"/g, '');
+                        const isUnread = email.labelIds?.includes('UNREAD');
+                        const emailDate = new Date(date);
+                        const threadId = email.threadId || '';
+
+                        const fullBody = extractEmailBody(email.payload);
+                        const bodyPreview = fullBody.slice(0, 800);
+                        const bodyLower = fullBody.toLowerCase();
+
+                        const crmMatch = allCrmContacts.find(c => c.email === fromEmail);
+                        const isClient = !!crmMatch;
+                        const isHighImportance = crmMatch?.importance === 'high';
+
+                        let priority: 'critical' | 'high' | 'medium' | 'low' = 'low';
+                        let category = 'other';
+                        if (isClient && isHighImportance) { priority = 'critical'; category = 'client_vip'; }
+                        else if (isClient) { priority = 'high'; category = 'client'; }
+                        else if (fromEmail.includes('lexia') || fromEmail.includes('konekt')) { priority = 'medium'; category = 'internal'; }
+                        else { priority = 'low'; category = 'external'; }
+
+                        // ─── THREAD-AWARE REPLY CHECK ───
+                        // Check if we already sent a reply in this thread (newer than this email)
+                        const sentReplyDate = sentThreadMap.get(threadId);
+                        const alreadyReplied = !!(sentReplyDate && sentReplyDate > emailDate);
+
+                        const needsReply = !alreadyReplied && isUnread && (
+                            /\?/.test(subject) ||
+                            /merci de|pouvez-vous|pourriez-vous|peux-tu|est-ce que|quand|comment|j'aimerais|serait-il possible|dispo|disponible|confirmer|retour|réponse|ton avis|votre avis|urgent|asap/.test(bodyLower) ||
+                            /please|could you|can you|let me know|looking forward|when can|would you|awaiting|respond|reply/.test(bodyLower) ||
+                            isClient
+                        );
+
+                        let replySuggestion = '';
+                        if (suggestReplies && needsReply) {
+                            if (/devis|proposition|offre|prix|tarif|budget/.test(bodyLower)) replySuggestion = 'Envoyer un devis ou une proposition commerciale';
+                            else if (/rdv|reunion|call|rendez-vous|dispo|cr[eé]neau/.test(bodyLower)) replySuggestion = 'Proposer un creneau de rendez-vous';
+                            else if (/urgent|asap|rapidement|au plus vite/.test(bodyLower)) replySuggestion = 'Repondre en priorite absolue — demande urgente';
+                            else if (/confirmer|confirmation|valider|validation/.test(bodyLower)) replySuggestion = 'Confirmer/valider ce qui est demande';
+                            else if (/question|demande|renseignement|information/.test(bodyLower)) replySuggestion = 'Repondre a la question posee';
+                            else if (isClient) replySuggestion = 'Repondre de maniere proactive — c\'est un client';
+                            else replySuggestion = 'Repondre selon le contenu';
+                        }
+
+                        analyzedEmails.push({
+                            id: email.id, from: fromName, fromEmail, subject, date, isUnread, alreadyReplied, bodyPreview, fullBodyLength: fullBody.length,
+                            isClient, companyName: crmMatch?.companyName || null, companyId: crmMatch?.companyId || null,
+                            contactRole: crmMatch?.role || null, importance: crmMatch?.importance || 'unknown', pipelineStage: crmMatch?.stage || null,
+                            priority, category, needsReply, replySuggestion: needsReply ? replySuggestion : null,
+                        });
+                    }
+
+                    // Sort by priority
+                    const priorityOrder = { critical: 0, high: 1, medium: 2, low: 3 };
+                    analyzedEmails.sort((a, b) => priorityOrder[a.priority as keyof typeof priorityOrder] - priorityOrder[b.priority as keyof typeof priorityOrder]);
+
+                    // ─── 4. Build follow-up monitor from conversation timelines ───
+                    const followUpData = conversationTimelines.length > 0 ? {
+                        total: conversationTimelines.length,
+                        needAction: conversationTimelines.filter(c => c.urgency !== 'low').length,
+                        awaitingReply: conversationTimelines.filter(c => c.conversationStatus === 'awaiting_their_reply').length,
+                        needsOurReply: conversationTimelines.filter(c => c.conversationStatus === 'needs_our_reply').length,
+                        noRecentExchange: conversationTimelines.filter(c => c.conversationStatus === 'no_recent_exchange').length,
+                        conversations: conversationTimelines.map(c => ({
+                            contactName: c.contactName,
+                            companyName: c.companyName,
+                            companyId: c.companyId,
+                            importance: c.importance,
+                            pipelineStage: c.pipelineStage,
+                            contactRole: c.contactRole,
+                            status: c.conversationStatus,
+                            daysSinceExchange: c.daysSinceLastExchange,
+                            daysSinceOurAction: c.daysSinceOurLastAction,
+                            pendingTopics: c.pendingTopics,
+                            urgency: c.urgency,
+                            recommendation: c.recommendation,
+                            lastSent: c.lastSent ? { subject: c.lastSent.subject, daysAgo: Math.floor((Date.now() - c.lastSent.date.getTime()) / 86400000) } : null,
+                            lastReceived: c.lastReceived ? { subject: c.lastReceived.subject, daysAgo: Math.floor((Date.now() - c.lastReceived.date.getTime()) / 86400000) } : null,
+                            emailCount: c.entries.length,
+                        })),
+                    } : null;
+
+                    const needReplyCount = analyzedEmails.filter(e => e.needsReply).length;
+                    const clientCount = analyzedEmails.filter(e => e.isClient).length;
+                    const followUpActions = followUpData ? followUpData.needAction : 0;
+
+                    if (this.navigationCallback) this.navigationCallback('/inbox');
+
+                    return {
+                        type: 'info', target: 'email_analysis', params: args,
+                        description: `Analyse de ${analyzedEmails.length} mail(s) + veille sur ${conversationTimelines.length} contact(s) CRM: ${needReplyCount} mails a repondre, ${followUpActions} client(s) a relancer`,
+                        success: true,
+                        result: {
+                            totalAnalyzed: analyzedEmails.length,
+                            needReply: needReplyCount,
+                            fromClients: clientCount,
+                            fromClientsVIP: analyzedEmails.filter(e => e.priority === 'critical').length,
+                            emails: analyzedEmails,
+                            summary: {
+                                critical: analyzedEmails.filter(e => e.priority === 'critical'),
+                                high: analyzedEmails.filter(e => e.priority === 'high'),
+                                medium: analyzedEmails.filter(e => e.priority === 'medium'),
+                                low: analyzedEmails.filter(e => e.priority === 'low'),
+                            },
+                            // NEW: Conversation follow-up monitor
+                            followUpMonitor: followUpData,
+                        }
                     };
                 }
 
@@ -2347,10 +3026,11 @@ ${this.crmContext.mentions.slice(0, 8).map(m => `- ${m.authorName} sur "${m.proj
 ${recentHistory ? `HISTORIQUE:\n${recentHistory}\n` : ''}
 
 OUTILS (utilise TOUJOURS les tools pour agir):
-- intelligent_daily_program: PROGRAMME DU JOUR INTELLIGENT — agrege taches, mentions, mails, clients a relancer, agenda, projets et cree un briefing structure par priorite (URGENT/IMPORTANT/A PLANIFIER). A UTILISER OBLIGATOIREMENT quand l'utilisateur demande "programme du jour", "que dois-je faire", "briefing", "mon planning", "recapitule ma journee", "qu est-ce que j ai a faire", "fais moi un programme"
+- intelligent_daily_program: PROGRAMME DU JOUR INTELLIGENT — agrege taches, mentions, 50+ mails (recus ET envoyes), clients a relancer, agenda, projets. INCLUT maintenant un SUIVI DE CONVERSATIONS par contact CRM: detecte les propositions commerciales sans reponse, les clients en attente, les mails ou tu n'as pas repondu. Cree un briefing structure par priorite (URGENT/IMPORTANT/A PLANIFIER) avec des recommandations precises de relance. A UTILISER OBLIGATOIREMENT quand l'utilisateur demande "programme du jour", "que dois-je faire", "briefing", "mon planning", "recapitule ma journee", "qu est-ce que j ai a faire", "fais moi un programme"
+- email_deep_analysis: VEILLE EMAIL COMPLETE — analyse 50+ mails (recus ET envoyes), croise avec le CRM, et construit un suivi de conversation bidirectionnel par contact. DETECTE: mails a repondre, propositions envoyees sans reponse (ex: "Ca fait 7j que tu as envoye ce devis a X"), clients en attente de ta reponse, contacts CRM inactifs. Le resultat inclut un "followUpMonitor" avec des recommandations d'action par client. A UTILISER quand l'utilisateur demande "analyse mes mails", "veille mail", "qui dois-je relancer", "point mails", "relances a faire", "suivi clients", "a qui je dois repondre"
+- smart_reply: reponse contextuelle a un email -> lit le corps complet du mail, cross-reference avec le CRM, et cree un draft adapte au contexte. A UTILISER quand l'utilisateur dit "reponds a [personne]", "draft une reponse pour X", "reponds a ce mail"
 - analyze_relationship: analyse relation avec score, risques, actions
-- smart_reply: reponse contextuelle a un email -> draft
-- extract_actions_from_emails: scan mails -> extraction taches
+- extract_actions_from_emails: scan mails COMPLETS -> extraction taches intelligente
 - smart_follow_up: relances intelligentes avec messages
 - lead_scoring: scoring 0-100 de chaque lead
 - generate_report: reporting jour/semaine/mois
@@ -2379,10 +3059,21 @@ REGLES:
 7. BRIEFING INTELLIGENT: Quand on te demande ton programme, ton planning, ce que tu dois faire, un briefing ou une recap de la journee, utilise TOUJOURS intelligent_daily_program et presente le resultat de facon claire et priorisee. Structure ta reponse avec les sections URGENT, IMPORTANT, et A PLANIFIER. Termine en proposant 3 actions concretes: "Je peux approfondir les mentions, rediger une relance pour [client], ou organiser ton agenda."
 8. APPROFONDISSEMENT: Quand l'utilisateur dit "parle-moi des mentions", "les relances", "detail sur les taches urgentes", utilise les donnees du dernier briefing intelligent pour donner une reponse detaillee et actionnable. Ne refais pas appel a intelligent_daily_program, exploite les donnees deja collectees.
 9. MENTIONS COLLABORATIVES: Les mentions des collegues via @ sont des demandes d'action. Mets-les toujours en evidence dans le briefing et rappelle ce que chaque collegue attend.
+10. ASSISTANT MAIL INTELLIGENT: Tu es un veritable assistant email. Quand l'utilisateur te parle de ses mails, utilise email_deep_analysis pour analyser 50+ mails (recus ET envoyes), identifier les expediteurs dans le CRM, et construire un suivi de conversation par contact. Tu dois lui dire:
+    - A qui il doit repondre EN PRIORITE (clients > prospects > autres)
+    - POURQUOI il doit repondre (le contenu du mail, ce qui est demande)
+    - Quels clients n'ont pas repondu a SES mails (propositions commerciales, relances...)
+    - Quels clients attendent SA reponse
+    - COMMENT repondre ou relancer (strategie suggeree)
+    - Propose systematiquement de rediger le draft de relance ou de reponse pour lui
+    Quand tu presentes les resultats, sois ultra-specifique. Ne dis jamais "tu as 3 mails non lus". Dis par exemple "Ca fait 7 jours que tu as envoye ta proposition commerciale a Sophie Martin (OMNES Education, client VIP) et elle n'a pas repondu. Je te recommande de relancer. Veux-tu que je redige le mail de relance ?"
+11. SUIVI DE CONVERSATIONS BIDIRECTIONNEL + DETECTION THREAD: Le followUpMonitor dans les resultats contient le suivi complet de chaque contact CRM. Pour chaque contact, tu connais: le dernier mail envoye (sujet + date), le dernier mail recu (sujet + date), le statut ('needs_our_reply', 'awaiting_their_reply', 'no_recent_exchange'), les sujets en cours (proposition, contrat, rdv...), et une recommandation. IMPORTANT: le systeme detecte automatiquement les reponses deja envoyees dans le meme fil de discussion (threadId Gmail). Si le champ 'alreadyReplied' est true pour un email, cela signifie que l'utilisateur a DEJA repondu dans ce thread — NE SUGGERE PAS de repondre a cet email. Seuls les emails avec needsReply=true et alreadyReplied=false necessitent reellement une reponse. UTILISE ces donnees pour etre ultra-precis et NE PAS recommander des actions deja effectuees. Mentionne le sujet exact des mails, le nombre de jours ecoules, et l'action recommandee.
+12. REPONSES MAIL CONTEXTUELLES: Quand tu rediges un draft via smart_reply, lis le corps complet du mail original pour comprendre le contexte. La reponse doit etre pertinente par rapport au CONTENU reel du mail, pas generique. Si c'est un client CRM, adapte le ton a la relation existante.
+13. MEME SI TOUT EST A JOUR: Si les mails sont a jour et qu'aucun client n'attend de reponse, suggere quand meme des actions proactives: "Tous tes mails sont a jour. Je te suggere de relancer Vetoptim pour avancer sur la validation du contrat, ou d'envoyer un point d'etape a OMNES Education."
 
 EXEMPLES:
-- "Voici ton programme de la journee:\n\nURGENT (3 elements)\n- Tache 'Envoyer proposition' pour OMNES — en retard de 1j\n- Hugo t'a mentionne sur le projet Vetoptim : 'peux-tu valider le budget ?'\n- 2 mails non lus de contacts prioritaires\n\nIMPORTANT (4 elements)\n- Reunion a 14h avec Datapulse\n- Relancer Vetoptim (sans contact depuis 12j)\n\nJe peux approfondir un de ces sujets, rediger une relance, ou t'aider a organiser ta journee."
-- "J'ai detecte 2 alertes critiques dans ton pipeline. Tu veux que je te les montre ? Ou on commence par organiser ta journee ?"`;
+- "Voici ton programme de la journee:\n\nURGENT (4 elements)\n- Ca fait 8 jours que tu as envoye la proposition commerciale a Sophie Martin (OMNES Education, client VIP) — pas de reponse. Relance recommandee.\n- Dr. Claire (Vetoptim) t'a envoye un mail hier pour confirmer un creneau — tu n'as pas repondu.\n- Tache 'Envoyer proposition' pour Gruau — en retard de 1j\n- Hugo t'a mentionne sur le projet Vetoptim : 'peux-tu valider le budget ?'\n\nIMPORTANT (3 elements)\n- Reunion a 14h avec Datapulse\n- Jean-Marc Leroy (Gruau) attend ton retour depuis 3j sur le cahier des charges\n- Mail de Pierre Leroy (OMNES) qui confirme la reception du devis — pas d'action requise\n\nA PLANIFIER\n- Reprendre contact avec Accenture (aucun echange depuis 15j)\n\nJe peux rediger une relance pour OMNES, repondre a Claire de Vetoptim, ou organiser ton agenda."
+- "J'ai analyse 50 mails et croise avec ton CRM. Voici la veille complete:\n\nA RELANCER (propositions sans reponse):\n1. Sophie Martin (OMNES Education) — proposition envoyee il y a 8j, pas de retour. URGENT.\n2. Jean-Marc Leroy (Gruau) — cahier des charges envoye il y a 5j.\n\nA REPONDRE (clients en attente de ta reponse):\n1. Dr. Claire (Vetoptim) — demande de creneau pour signer le contrat\n\nTous les autres echanges sont a jour.\n\nJe te redige la relance pour Sophie ?"`;
 
         try {
             const actions: AIAction[] = [];

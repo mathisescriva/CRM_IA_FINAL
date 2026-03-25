@@ -3,8 +3,8 @@ import { gmailService } from './gmail';
 
 class CalendarService {
     get isAuthenticated(): boolean {
-        const gapi = (window as any).gapi;
-        return gapi?.client?.getToken() !== null && gmailService.isAuthenticated;
+        const token = (window as any).gapi?.client?.getToken();
+        return !!token?.access_token && gmailService.isAuthenticated;
     }
 
     private async ensureInitialized() {
@@ -19,14 +19,8 @@ class CalendarService {
     }
 
     async listEvents(timeMin: string, timeMax: string) {
-        // Use isAuthenticated instead of useRealGmail to check if we can fetch real data
-        console.log("[Calendar] listEvents called, isAuthenticated:", gmailService.isAuthenticated);
-        
-        if (!gmailService.isAuthenticated) {
-            console.log("[Calendar] Not authenticated - returning empty array.");
-            return [];
-        }
-
+        if (!gmailService.isAuthenticated) return [];
+        await gmailService.refreshTokenIfNeeded();
         await this.ensureInitialized();
         const gapi = (window as any).gapi;
         
@@ -59,10 +53,9 @@ class CalendarService {
         conferenceData?: any
     }) {
         if (!gmailService.isAuthenticated) {
-            console.log("[Calendar] Not authenticated - returning mock event");
             return { id: 'mock-event-' + Date.now() };
         }
-
+        await gmailService.refreshTokenIfNeeded();
         await this.ensureInitialized();
         const gapi = (window as any).gapi;
         

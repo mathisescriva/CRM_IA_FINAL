@@ -60,7 +60,7 @@ const CustomSelect: React.FC<SelectProps> = ({ value, onChange, options, placeho
                 <ChevronDown className={cn("h-4 w-4 opacity-50 transition-transform", isOpen && "rotate-180")} />
             </Button>
             {isOpen && (
-                <div className="absolute z-50 mt-1 max-h-60 w-full overflow-auto rounded-lg border bg-popover text-popover-foreground shadow-lg animate-in fade-in-0 zoom-in-95">
+                <div className="absolute z-50 mt-1 max-h-60 w-full overflow-auto rounded-lg border bg-popover text-popover-foreground shadow-sm animate-in fade-in-0 zoom-in-95">
                     <div className="p-1">
                         {options.map((option) => (
                             <div
@@ -249,8 +249,8 @@ export const PeopleDirectory: React.FC = () => {
             {/* Header */}
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                 <div className="flex items-center gap-4">
-                    <div className="h-12 w-12 rounded-xl flex items-center justify-center bg-gradient-to-br from-emerald-500 to-teal-600">
-                        <ContactIcon className="h-6 w-6 text-white" />
+                    <div className="h-12 w-12 rounded-lg flex items-center justify-center bg-primary">
+                        <ContactIcon className="h-6 w-6 text-primary-foreground" />
                     </div>
                     <div>
                         <h1 className="text-2xl font-bold tracking-tight">Annuaire Contacts</h1>
@@ -284,7 +284,7 @@ export const PeopleDirectory: React.FC = () => {
                     className={cn(
                         "flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium transition-all",
                         entityTypeFilter === 'client' 
-                            ? "bg-background text-blue-600 shadow-sm" 
+                            ? "bg-background text-primary shadow-sm" 
                             : "text-muted-foreground hover:text-foreground"
                     )}
                 >
@@ -296,7 +296,7 @@ export const PeopleDirectory: React.FC = () => {
                     className={cn(
                         "flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium transition-all",
                         entityTypeFilter === 'partner' 
-                            ? "bg-background text-purple-600 shadow-sm" 
+                            ? "bg-background text-primary shadow-sm" 
                             : "text-muted-foreground hover:text-foreground"
                     )}
                 >
@@ -390,8 +390,8 @@ export const PeopleDirectory: React.FC = () => {
                                                         <span className={cn(
                                                             "text-[10px] font-medium flex items-center gap-1",
                                                             contact.entityType === 'client' 
-                                                                ? "text-blue-600 dark:text-blue-400"
-                                                                : "text-purple-600 dark:text-purple-400"
+                                                                ? "text-primary"
+                                                                : "text-muted-foreground"
                                                         )}>
                                                             {contact.entityType === 'client' ? (
                                                                 <><Users className="h-2.5 w-2.5" /> Client</>

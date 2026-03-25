@@ -1,29 +1,23 @@
 import React, { useState, useEffect } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
-import { 
-    LayoutDashboard, 
-    FolderKanban, 
-    Users, 
-    Inbox, 
-    Contact, 
-    Settings, 
-    LogOut, 
-    ChevronDown, 
-    ChevronRight, 
-    PieChart, 
-    Briefcase, 
+import {
+    LayoutDashboard,
+    FolderKanban,
+    Inbox,
+    Contact,
+    Settings,
+    LogOut,
+    ChevronDown,
+    PieChart,
+    Briefcase,
     X,
     Moon,
     Sun,
-    Sparkles,
     Calendar,
-    Handshake,
-    DollarSign,
-    BarChart3,
     Mail,
     CheckSquare,
     FileText,
-    Wrench
+    Wrench,
 } from 'lucide-react';
 import { cn, getInitials } from '../lib/utils';
 import { authService } from '../services/auth';
@@ -51,7 +45,6 @@ const NAV_STRUCTURE: NavItem[] = [
         subItems: [
             { label: 'Vue d\'ensemble', path: '/', icon: PieChart },
             { label: 'Pipeline', path: '/kanban', icon: FolderKanban },
-            { label: 'Analytics', path: '/analytics', icon: BarChart3 },
         ]
     },
     { 
@@ -140,19 +133,19 @@ export const AppSidebar: React.FC<AppSidebarProps> = ({ isOpen, onClose }) => {
                 onClick={onClose}
             />
 
-            <aside 
+            <aside
                 className={cn(
-                    "fixed left-0 top-0 z-50 h-screen w-64 bg-sidebar border-r border-sidebar-border flex flex-col transition-transform duration-300 ease-in-out md:translate-x-0",
-                    isOpen ? "translate-x-0" : "-translate-x-full"
+                    'fixed left-0 top-0 z-50 h-screen w-[240px] bg-sidebar border-r border-sidebar-border flex flex-col transition-transform duration-300 ease-in-out md:translate-x-0',
+                    isOpen ? 'translate-x-0' : '-translate-x-full'
                 )}
             >
                 {/* Header */}
-                <div className="flex h-16 items-center justify-between px-4 border-b border-sidebar-border">
-                    <Link to="/" className="flex items-center gap-2 pl-2" onClick={handleLinkClick}>
-                        <img 
-                            src={user?.customAppLogo || "/logo_konekt.png"}
-                            alt="Konekt" 
-                            className="h-4 w-auto object-contain brightness-[0.85] dark:invert" 
+                <div className="flex h-12 items-center justify-between px-3 border-b border-sidebar-border">
+                    <Link to="/" className="flex items-center gap-2 pl-1.5 min-w-0" onClick={handleLinkClick}>
+                        <img
+                            src={user?.customAppLogo || '/logo_konekt.png'}
+                            alt="Konekt"
+                            className="h-3.5 w-auto max-w-[140px] object-contain opacity-80 brightness-0 dark:invert dark:opacity-70"
                         />
                     </Link>
                     <Button 
@@ -166,8 +159,8 @@ export const AppSidebar: React.FC<AppSidebarProps> = ({ isOpen, onClose }) => {
                 </div>
 
                 {/* Navigation */}
-                <ScrollArea className="flex-1 py-4">
-                    <nav className="px-3 space-y-1">
+                <ScrollArea className="flex-1 py-3">
+                    <nav className="px-2 space-y-0.5 text-[13px] tracking-tight">
                         {NAV_STRUCTURE.map((item) => {
                             const Icon = item.icon;
                             const hasSubItems = item.subItems && item.subItems.length > 0;
@@ -179,48 +172,60 @@ export const AppSidebar: React.FC<AppSidebarProps> = ({ isOpen, onClose }) => {
                                 <div key={item.label}>
                                     {hasSubItems ? (
                                         <button
+                                            type="button"
                                             onClick={() => toggleMenu(item.label)}
                                             className={cn(
-                                                "w-full flex items-center justify-between rounded-lg px-3 py-2.5 text-sm font-medium transition-all",
-                                                "text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
-                                                (isChildActive || isExpanded) && "text-sidebar-accent-foreground"
+                                                'w-full flex items-center justify-between rounded-md px-2.5 py-1.5 font-medium transition-colors',
+                                                'text-sidebar-foreground/90 hover:bg-sidebar-accent',
+                                                isChildActive && 'text-sidebar-foreground'
                                             )}
                                         >
-                                            <div className="flex items-center gap-3">
-                                                <Icon className={cn(
-                                                    "h-4 w-4 transition-colors",
-                                                    isChildActive ? "text-sidebar-primary" : "text-sidebar-foreground/70"
-                                                )} />
-                                                {item.label}
+                                            <div className="flex items-center gap-2.5 min-w-0">
+                                                <Icon
+                                                    className={cn(
+                                                        'h-4 w-4 shrink-0 text-sidebar-foreground/55',
+                                                        isChildActive && 'text-sidebar-foreground'
+                                                    )}
+                                                />
+                                                <span className="truncate">{item.label}</span>
+                                                {item.path === '/inbox' && unreadCount > 0 && (
+                                                    <Badge
+                                                        variant="outline"
+                                                        className="h-5 min-w-5 px-1 text-[10px] font-medium tabular-nums border-sidebar-border text-sidebar-foreground shrink-0"
+                                                    >
+                                                        {unreadCount > 99 ? '99+' : unreadCount}
+                                                    </Badge>
+                                                )}
                                             </div>
-                                            <ChevronDown className={cn(
-                                                "h-4 w-4 text-sidebar-foreground/50 transition-transform duration-200",
-                                                isExpanded && "rotate-180"
-                                            )} />
+                                            <ChevronDown
+                                                className={cn(
+                                                    'h-3.5 w-3.5 shrink-0 text-sidebar-foreground/40 transition-transform duration-200',
+                                                    isExpanded && 'rotate-180'
+                                                )}
+                                            />
                                         </button>
                                     ) : (
                                         <Link
                                             to={item.path}
                                             onClick={handleLinkClick}
                                             className={cn(
-                                                "flex items-center justify-between rounded-lg px-3 py-2.5 text-sm font-medium transition-all",
+                                                'flex items-center justify-between rounded-md px-2.5 py-1.5 font-medium transition-colors',
                                                 isDirectActive
-                                                    ? "bg-sidebar-primary text-sidebar-primary-foreground shadow-sm"
-                                                    : "text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+                                                    ? 'bg-sidebar-primary text-sidebar-primary-foreground'
+                                                    : 'text-sidebar-foreground/90 hover:bg-sidebar-accent'
                                             )}
                                         >
-                                            <div className="flex items-center gap-3">
-                                                <Icon className={cn(
-                                                    "h-4 w-4",
-                                                    isDirectActive ? "text-sidebar-primary-foreground" : "text-sidebar-foreground/70"
-                                                )} />
-                                                {item.label}
+                                            <div className="flex items-center gap-2.5 min-w-0">
+                                                <Icon
+                                                    className={cn(
+                                                        'h-4 w-4 shrink-0',
+                                                        isDirectActive
+                                                            ? 'text-sidebar-primary-foreground'
+                                                            : 'text-sidebar-foreground/55'
+                                                    )}
+                                                />
+                                                <span className="truncate">{item.label}</span>
                                             </div>
-                                            {item.label === 'Inbox' && unreadCount > 0 && (
-                                                <Badge variant="destructive" className="h-5 min-w-5 text-[10px] px-1.5">
-                                                    {unreadCount}
-                                                </Badge>
-                                            )}
                                         </Link>
                                     )}
 
@@ -230,7 +235,7 @@ export const AppSidebar: React.FC<AppSidebarProps> = ({ isOpen, onClose }) => {
                                             "overflow-hidden transition-all duration-200 ease-out",
                                             isExpanded ? "max-h-48 opacity-100" : "max-h-0 opacity-0"
                                         )}>
-                                            <div className="mt-1 ml-4 pl-3 border-l-2 border-sidebar-border space-y-1">
+                                            <div className="mt-0.5 ml-2.5 pl-2.5 border-l border-sidebar-border space-y-0.5">
                                                 {item.subItems?.map((sub) => {
                                                     const isSubActive = location.pathname === sub.path;
                                                     return (
@@ -239,10 +244,10 @@ export const AppSidebar: React.FC<AppSidebarProps> = ({ isOpen, onClose }) => {
                                                             to={sub.path}
                                                             onClick={handleLinkClick}
                                                             className={cn(
-                                                                "flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-all",
+                                                                'flex items-center rounded-md px-2 py-1.5 transition-colors',
                                                                 isSubActive
-                                                                    ? "bg-sidebar-primary/10 text-sidebar-primary font-medium"
-                                                                    : "text-sidebar-foreground/70 hover:text-sidebar-foreground hover:bg-sidebar-accent"
+                                                                    ? 'bg-sidebar-accent text-sidebar-foreground font-medium'
+                                                                    : 'text-sidebar-foreground/65 hover:text-sidebar-foreground hover:bg-sidebar-accent/70'
                                                             )}
                                                         >
                                                             {sub.label}
@@ -257,58 +262,59 @@ export const AppSidebar: React.FC<AppSidebarProps> = ({ isOpen, onClose }) => {
                         })}
                     </nav>
 
-                    <Separator className="my-4 mx-3" />
+                    <Separator className="my-3 mx-2" />
 
                     {/* Settings Section */}
-                    <div className="px-3 space-y-1">
-                        <p className="px-3 mb-2 text-xs font-semibold text-sidebar-foreground/50 uppercase tracking-wider">
+                    <div className="px-2 space-y-0.5">
+                        <p className="px-2.5 mb-1.5 text-[11px] font-medium text-sidebar-foreground/45 uppercase tracking-wide">
                             Paramètres
                         </p>
-                        
+
                         <button
+                            type="button"
                             onClick={toggleTheme}
-                            className="w-full flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-sidebar-foreground hover:bg-sidebar-accent transition-all"
+                            className="w-full flex items-center gap-2.5 rounded-md px-2.5 py-1.5 font-medium text-sidebar-foreground/90 hover:bg-sidebar-accent transition-colors"
                         >
                             {isDark ? (
-                                <Sun className="h-4 w-4 text-sidebar-foreground/70" />
+                                <Sun className="h-4 w-4 text-sidebar-foreground/50" />
                             ) : (
-                                <Moon className="h-4 w-4 text-sidebar-foreground/70" />
+                                <Moon className="h-4 w-4 text-sidebar-foreground/50" />
                             )}
                             {isDark ? 'Mode clair' : 'Mode sombre'}
                         </button>
 
-                        <Link 
-                            to="/settings" 
+                        <Link
+                            to="/settings"
                             onClick={handleLinkClick}
                             className={cn(
-                                "flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-all",
+                                'flex items-center gap-2.5 rounded-md px-2.5 py-1.5 font-medium transition-colors',
                                 location.pathname === '/settings'
-                                    ? "bg-sidebar-primary text-sidebar-primary-foreground"
-                                    : "text-sidebar-foreground hover:bg-sidebar-accent"
+                                    ? 'bg-sidebar-primary text-sidebar-primary-foreground'
+                                    : 'text-sidebar-foreground/90 hover:bg-sidebar-accent'
                             )}
                         >
-                            <Settings className="h-4 w-4 text-sidebar-foreground/70" />
+                            <Settings className="h-4 w-4 text-sidebar-foreground/50" />
                             Préférences
                         </Link>
                     </div>
                 </ScrollArea>
 
                 {/* User Section */}
-                <div className="border-t border-sidebar-border p-4">
-                    <div className="flex items-center gap-3">
-                        <Avatar className="h-9 w-9 border-2 border-sidebar-border">
+                <div className="border-t border-sidebar-border p-3">
+                    <div className="flex items-center gap-2.5">
+                        <Avatar className="h-8 w-8 border border-sidebar-border rounded-md">
                             {user?.avatarUrl ? (
                                 <AvatarImage src={user.avatarUrl} alt={user.name} />
                             ) : null}
-                            <AvatarFallback className="bg-sidebar-primary/10 text-sidebar-primary text-xs font-semibold">
+                            <AvatarFallback className="bg-sidebar-accent text-sidebar-foreground text-[11px] font-medium rounded-md">
                                 {getInitials(user?.name || 'User')}
                             </AvatarFallback>
                         </Avatar>
                         <div className="flex-1 min-w-0">
-                            <p className="text-sm font-medium text-sidebar-foreground truncate">
+                            <p className="text-[13px] font-medium text-sidebar-foreground truncate leading-tight">
                                 {user?.name || 'Guest'}
                             </p>
-                            <p className="text-xs text-sidebar-foreground/50 truncate">
+                            <p className="text-[11px] text-sidebar-foreground/50 truncate leading-tight">
                                 {user?.email || 'Se connecter'}
                             </p>
                         </div>
@@ -317,7 +323,7 @@ export const AppSidebar: React.FC<AppSidebarProps> = ({ isOpen, onClose }) => {
                                 variant="ghost"
                                 size="icon"
                                 onClick={handleLogout}
-                                className="text-sidebar-foreground/50 hover:text-destructive hover:bg-destructive/10"
+                                className="h-8 w-8 text-sidebar-foreground/45 hover:text-foreground hover:bg-sidebar-accent shrink-0"
                             >
                                 <LogOut className="h-4 w-4" />
                             </Button>

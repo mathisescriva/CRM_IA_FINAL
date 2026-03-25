@@ -2,7 +2,6 @@ import React from 'react';
 import { cn } from '../../lib/utils';
 import { Priority, CompanyType } from '../../types';
 
-// Base Badge Component - shadcn style
 interface BadgeProps extends React.HTMLAttributes<HTMLDivElement> {
   variant?: 'default' | 'secondary' | 'destructive' | 'outline' | 'success' | 'warning';
 }
@@ -10,19 +9,19 @@ interface BadgeProps extends React.HTMLAttributes<HTMLDivElement> {
 export const Badge = React.forwardRef<HTMLDivElement, BadgeProps>(
   ({ className, variant = 'default', ...props }, ref) => {
     const variants = {
-      default: "bg-primary/10 text-primary border-primary/20",
-      secondary: "bg-secondary/10 text-secondary-foreground border-secondary/20",
-      destructive: "bg-destructive/10 text-destructive border-destructive/20",
-      outline: "text-foreground border-border bg-transparent",
-      success: "bg-emerald-500/10 text-emerald-600 border-emerald-500/20 dark:text-emerald-400",
-      warning: "bg-amber-500/10 text-amber-600 border-amber-500/20 dark:text-amber-400",
+      default: 'bg-foreground/8 text-foreground border-border/60',
+      secondary: 'bg-muted text-muted-foreground border-border/40',
+      destructive: 'bg-foreground/5 text-foreground border-border/60',
+      outline: 'text-foreground border-border bg-transparent',
+      success: 'bg-foreground/5 text-foreground/80 border-border/50',
+      warning: 'bg-foreground/5 text-foreground/70 border-border/50',
     };
 
     return (
       <div
         ref={ref}
         className={cn(
-          "inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold transition-colors",
+          'inline-flex items-center rounded-md border px-2 py-0.5 text-[11px] font-medium transition-colors',
           variants[variant],
           className
         )}
@@ -34,83 +33,54 @@ export const Badge = React.forwardRef<HTMLDivElement, BadgeProps>(
 
 Badge.displayName = 'Badge';
 
-// Priority Badge
 export const PriorityBadge: React.FC<{ priority: Priority }> = ({ priority }) => {
   const config = {
-    high: { variant: 'destructive' as const, label: 'Haute', dot: 'bg-destructive' },
-    medium: { variant: 'warning' as const, label: 'Moyenne', dot: 'bg-amber-500' },
-    low: { variant: 'secondary' as const, label: 'Basse', dot: 'bg-muted-foreground' },
+    high: { label: 'Haute', dot: 'bg-foreground' },
+    medium: { label: 'Moyenne', dot: 'bg-foreground/50' },
+    low: { label: 'Basse', dot: 'bg-foreground/25' },
   };
-
-  const { variant, label, dot } = config[priority];
-
+  const { label, dot } = config[priority];
   return (
-    <Badge variant={variant}>
-      <span className={cn("mr-1.5 h-1.5 w-1.5 rounded-full", dot)} />
+    <Badge variant="outline">
+      <span className={cn('mr-1.5 h-1.5 w-1.5 rounded-full', dot)} />
       {label}
     </Badge>
   );
 };
 
-// Company Type Badge
-export const TypeBadge: React.FC<{ type: CompanyType }> = ({ type }) => {
-  const colors: Record<string, string> = {
-    'PME': "bg-blue-500/10 text-blue-600 border-blue-500/20 dark:text-blue-400",
-    'GE/ETI': "bg-orange-500/10 text-orange-600 border-orange-500/20 dark:text-orange-400",
-    'Public Services': "bg-emerald-500/10 text-emerald-600 border-emerald-500/20 dark:text-emerald-400",
-  };
+export const TypeBadge: React.FC<{ type: CompanyType }> = ({ type }) => (
+  <Badge variant="secondary">{type}</Badge>
+);
 
-  return (
-    <Badge className={colors[type] || colors['PME']}>
-      {type}
-    </Badge>
-  );
-};
-
-// Urgency Badge
 export const UrgencyBadge: React.FC<{ lastContactDate: string }> = ({ lastContactDate }) => {
-  const date = new Date(lastContactDate);
-  const now = new Date();
-  const diffTime = Math.abs(now.getTime() - date.getTime());
-  const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+  const diffDays = Math.ceil(Math.abs(Date.now() - new Date(lastContactDate).getTime()) / 86400000);
 
-  let variant: BadgeProps['variant'] = 'success';
-  let label = "À jour";
-  let dotClass = "bg-emerald-500";
+  let label = 'À jour';
+  let dotClass = 'bg-foreground/40';
 
   if (diffDays > 30) {
-    variant = 'destructive';
-    label = `Critique (+${diffDays}j)`;
-    dotClass = "bg-destructive animate-pulse";
+    label = `+${diffDays}j`;
+    dotClass = 'bg-foreground animate-pulse';
   } else if (diffDays > 14) {
-    variant = 'warning';
-    label = `Retard (+${diffDays}j)`;
-    dotClass = "bg-amber-500";
+    label = `+${diffDays}j`;
+    dotClass = 'bg-foreground/60';
   }
 
   return (
-    <Badge variant={variant}>
-      <span className={cn("mr-1.5 h-1.5 w-1.5 rounded-full", dotClass)} />
+    <Badge variant="outline">
+      <span className={cn('mr-1.5 h-1.5 w-1.5 rounded-full', dotClass)} />
       {label}
     </Badge>
   );
 };
 
-// Pipeline Stage Badge
 export const StageBadge: React.FC<{ stage: string }> = ({ stage }) => {
-  const config: Record<string, { label: string; className: string }> = {
-    'entry_point': { label: 'Entrée', className: 'bg-slate-500/10 text-slate-600 border-slate-500/20' },
-    'exchange': { label: 'Échange', className: 'bg-blue-500/10 text-blue-600 border-blue-500/20' },
-    'proposal': { label: 'Proposition', className: 'bg-orange-500/10 text-orange-600 border-orange-500/20' },
-    'validation': { label: 'Validation', className: 'bg-amber-500/10 text-amber-600 border-amber-500/20' },
-    'client_success': { label: 'Client', className: 'bg-emerald-500/10 text-emerald-600 border-emerald-500/20' },
+  const labels: Record<string, string> = {
+    entry_point: 'Entrée',
+    exchange: 'Échange',
+    proposal: 'Proposition',
+    validation: 'Validation',
+    client_success: 'Client',
   };
-
-  const { label, className } = config[stage] || config['entry_point'];
-
-  return (
-    <Badge className={className}>
-      {label}
-    </Badge>
-  );
+  return <Badge variant="outline">{labels[stage] || stage}</Badge>;
 };
